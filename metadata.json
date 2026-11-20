@@ -1,9 +1,9 @@
 {
   "id": "launcher-customizer",
   "name": "Launcher Customizer",
-  "description": "Everything KDE's Menu Editor does, inside Caelestia: categories, subcategories, separators, launchers (name, program, arguments, environment, icon, terminal, other user, GPU, shortcut…), order, sorting, cut/copy/paste, drag and drop, hidden entries and restore, all synced both ways with KDE.",
+  "description": "Make the app launcher yours: create, rename, reorder and re-icon categories, put any app anywhere, edit apps (command, icon, terminal, GPU…), add global shortcuts and your own launchers. Shared with KDE's menu, so everything stays in sync.",
   "icon": "icon.svg",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "type": "quickshell",
   "ui": "main.qml",
   "author": {

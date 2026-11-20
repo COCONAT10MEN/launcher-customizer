@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.0.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.0.1-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -16,10 +16,38 @@
 > update changes the code this plugin hooks into, it switches itself off safely and a
 > notification tells you.
 
-A plugin for [Caelestia KDE](https://github.com/caelestia-kde/caelestia) that brings
-**everything KDE's Menu Editor does** into Caelestia. The launcher's categories are the
-KDE application menu, and every change syncs both ways: edit here or in KDE, and both
-always match.
+**Make Caelestia's app launcher yours.** Out of the box, the launcher sorts your apps
+into a fixed set of categories that you can't rename, reorder or add to. Launcher
+Customizer, a plugin for [Caelestia KDE](https://github.com/caelestia-kde/caelestia),
+replaces that with a full editor for your launcher: your own categories, apps exactly
+where you want them, custom launchers for your own commands and scripts, global
+shortcuts, and the app details themselves, all in one window styled like the rest of
+Caelestia.
+
+## What it offers
+
+- **Categories that fit how you work.** Create, rename, nest into subcategories,
+  reorder, hide and delete them. Give each one an icon from ~3,800 Material Symbols, your
+  icon theme, or any SVG or PNG.
+- **Every app exactly where you want it.** Move apps between categories, show one app in
+  several, drag and drop, select many at once, add separators, set your own order, or
+  sort with one click.
+- **Edit the apps themselves.** Change any app's name, description, icon, command,
+  arguments, environment variables, work folder or keywords, and choose whether it runs
+  in a terminal, as another user, on the dedicated graphics card, or with launch
+  feedback.
+- **A shortcut for any app.** Click, press the keys, done: it works system-wide.
+- **Your own launchers.** Turn any command or script into a launcher with its own name
+  and icon.
+- **Hidden apps, found.** Show the entries apps hide by default, and bring back the ones
+  you want.
+- **Safe to experiment.** Every change can be undone, and *Restore to system menu* puts
+  everything back in one click.
+- **One menu everywhere.** Your layout is shared with KDE: Kickoff, KDE's Menu Editor and
+  Caelestia's launcher always show the same thing, and changes made in either place sync
+  to the other.
+- **Looks like Caelestia.** Categories use Caelestia's Material icon style, or your KDE
+  icon theme if you prefer.
 
 > [!TIP]
 > Right-click any app in the launcher and choose *Move to category…* to jump straight to
@@ -62,33 +90,33 @@ them gone. With the plugin off, the launcher shows Caelestia's stock categories.
 quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomizer open
 ```
 
-## Everything KDE's Menu Editor does
+## Where everything is
 
-| KDE Menu Editor | Here |
+| What | Where |
 | --- | --- |
-| New Item / New Submenu / New Separator | *New* button, right-click menus, `Ctrl+N`, `Ctrl+Shift+N` |
-| Cut / Copy / Paste / Delete | toolbar, right-click, `Ctrl+X` `Ctrl+C` `Ctrl+V` `Del`, plus drag and drop |
-| Move Up / Move Down | toolbar, right-click, `Alt+Up` `Alt+Down`, or drag to reorder |
-| Sort selection / all, by name or description | sort button, right-click on a category, *⋮* menu |
-| Show hidden entries | *Show hidden* switch |
-| Search | search box (name, description, comment, keywords) |
-| Restore to System Menu | *⋮ -> Restore to system menu…* |
-| Name, Generic name, Comment | *Name*, *Description*, *Comment* |
-| Program, Command-line arguments, Environment variables | *Program* (with file picker), *Arguments*, *Environment variables* |
+| Add a launcher, category, subcategory or separator | *New* button or right-click · `Ctrl+N`, `Ctrl+Shift+N` |
+| Move, copy or remove apps | toolbar or right-click · `Ctrl+X` `Ctrl+C` `Ctrl+V` `Del` · drag onto a category |
+| Change the order | arrows or right-click · `Alt+Up` `Alt+Down` · drag within the list |
+| Sort a category, or everything | sort button · right-click a category · *⋮* menu |
+| See hidden apps | *Show hidden* switch |
+| Find an app | search box (name, description, comment, keywords) |
+| Start over | *⋮ -> Restore to system menu…* |
+| Name, description, comment | the fields at the top of an app |
+| Command, arguments, environment variables | *Program* (with file picker), *Arguments*, *Environment variables* |
 | Icon | click the icon: Material Symbols, your icon theme, or any SVG/PNG |
-| Hidden entry, Only show when logged into Plasma | *Hidden*, *Only show in Plasma* |
-| Work path | *Work folder* (with folder picker) |
-| Run in terminal + Terminal options | *Run in terminal* + *Terminal options* |
-| Run as a different user + Username | *Run as a different user* + *Username* |
-| Current shortcut key | *Shortcut*: click and press the keys |
-| Run using dedicated graphics card | *Use dedicated graphics card* |
-| Enable launch feedback | *Launch feedback* |
-| Launch, Open Containing Folder, Copy Location | right-click menu and the buttons under the properties |
-| Submenu name, comment, icon, hidden | the same fields when a category is selected |
+| Hide an app, or show it only in Plasma | *Hidden*, *Only show in Plasma* |
+| Folder it starts in | *Work folder* (with folder picker) |
+| Run in a terminal | *Run in terminal* + *Terminal options* |
+| Run as another user | *Run as a different user* + *Username* |
+| Global shortcut | *Shortcut*: click it and press the keys |
+| Dedicated graphics card | *Use dedicated graphics card* |
+| Busy cursor while it starts | *Launch feedback* |
+| Launch it, open its folder, copy its file path | right-click, or the buttons under an app's details |
+| Category name, comment, icon, hidden | the same fields when a category is selected |
 
-Extras: subcategories, multi-select (`Ctrl`/`Shift`-click), add an app to several
-categories at once (*Also show in…*), undo for every change (`Ctrl+Z`, 40 steps), and a
-button that opens KDE's Menu Editor if you ever want it.
+Also: multi-select with `Ctrl`/`Shift`-click, *Also show in…* to put an app in several
+categories, undo for every change (`Ctrl+Z`, 40 steps), and a button that opens KDE's own
+Menu Editor if you ever want it. Anything KDE's Menu Editor can do, you can do here.
 
 ## How it stays in sync
 
