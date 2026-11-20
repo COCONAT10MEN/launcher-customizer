@@ -6,8 +6,8 @@ import qs.services
 import qs.modules.launcher.services
 import "."
 
-// Launcher Customizer: organise launcher categories, synced both ways with
-// the KDE application menu by default. The shell side lives in
+// Launcher Customizer: everything KDE's Menu Editor does, inside Caelestia,
+// synced both ways with the KDE application menu. The shell side lives in
 // modules/launcher/services/LauncherCustomizer.qml, which patch.py installs
 // (and re-installs after Caelestia updates).
 Scope {
@@ -45,99 +45,9 @@ Scope {
     }
 
 
-    function setSource(src: string): void {
-        root.update(d => d.source = src);
-        if (src === "kde")
-            root.refreshKde();
-    }
 
     function setIconStyle(style: string): void {
         root.update(d => d.iconStyle = style);
-    }
-
-    // ============================================= Caelestia-mode categories
-
-    /// Every built-in/custom category with the user's edits, hidden ones included.
-    function fullList(): var {
-        const base = Categories.lcBaseDefinitions ?? [];
-        const user = Array.isArray(root.current().categories) ? root.current().categories : [];
-        const fromBase = b => ({ id: b.id, name: b.name, icon: b.icon, xdg: (b.xdg ?? []).slice(), hidden: false, custom: false });
-        if (user.length === 0)
-            return base.map(fromBase);
-
-        const byId = {};
-        for (const b of base)
-            byId[b.id] = b;
-        const out = [];
-        const seen = {};
-        for (const u of user) {
-            if (!u || typeof u.id !== "string" || seen[u.id])
-                continue;
-            const b = byId[u.id];
-            if (!b && !u.custom)
-                continue;
-            seen[u.id] = true;
-            out.push({
-                id: u.id,
-                name: (typeof u.name === "string" && u.name.trim()) ? u.name.trim() : (b?.name ?? u.id),
-                icon: (typeof u.icon === "string" && u.icon.trim()) ? u.icon.trim() : (b?.icon ?? "label"),
-                xdg: Array.isArray(u.xdg) ? u.xdg.slice() : (b?.xdg ?? []).slice(),
-                hidden: !!u.hidden,
-                custom: !b
-            });
-        }
-        for (let i = 0; i < base.length; i++)
-            if (!seen[base[i].id])
-                out.splice(Math.min(i, out.length), 0, fromBase(base[i]));
-        return out;
-    }
-
-    // Undo for Caelestia mode: snapshots of the config file.
-    property var history: []
-
-    function snapshotJson(): void {
-        const h = root.history.slice(-39);
-        h.push(JSON.stringify(root.current()));
-        root.history = h;
-    }
-
-    function undoJson(): void {
-        if (root.history.length === 0)
-            return;
-        const h = root.history.slice();
-        const prev = JSON.parse(h.pop());
-        root.history = h;
-        prev.source = root.current().source;
-        root.write(prev);
-    }
-
-    function saveCategories(list: var): void {
-        root.snapshotJson();
-        root.update(d => {
-            d.categories = list.map(c => ({ id: c.id, name: c.name, icon: c.icon, xdg: c.xdg ?? [], hidden: !!c.hidden, custom: !!c.custom }));
-        });
-    }
-
-    function assign(appId: string, categoryId: string): void {
-        root.snapshotJson();
-        root.update(d => {
-            d.assignments = d.assignments && typeof d.assignments === "object" ? d.assignments : {};
-            d.assignments[appId] = categoryId;
-        });
-    }
-
-    function unassign(appId: string): void {
-        root.snapshotJson();
-        root.update(d => {
-            if (d.assignments)
-                delete d.assignments[appId];
-        });
-    }
-
-    function resetCaelestia(): void {
-        root.snapshotJson();
-        const cur = root.current();
-        root.write({ source: cur.source ?? "kde", iconStyle: cur.iconStyle });
     }
 
     // ===================================================== KDE menu bridge
@@ -272,6 +182,89 @@ Scope {
         root.kdeSet(path, { icon: choice.value, "caelestia-icon": "" });
     }
 
+    // ---- entries, layout and the rest of KDE Menu Editor's actions
+
+    /// Edit an app entry; kv uses kdemenu.py's field names (name, program, terminal…).
+    function appSet(appId: string, kv: var): void {
+        const args = ["app-set", appId];
+        for (const k of Object.keys(kv))
+            args.push(k + "=" + (typeof kv[k] === "boolean" ? (kv[k] ? "1" : "0") : kv[k]));
+        root.kdeRun(args, null);
+    }
+
+    function appReset(appId: string): void {
+        root.kdeRun(["app-reset", appId], null);
+    }
+
+    function appNew(name: string, menuPath: string, done: var): void {
+        root.kdeRun(["app-new", name, menuPath], res => {
+            if (done && res?.ok)
+                done(res.created);
+        });
+    }
+
+    function appDelete(appId: string): void {
+        root.kdeRun(["app-delete", appId], null);
+    }
+
+    function menuNew(name: string, icon: string, parentPath: string, done: var): void {
+        root.kdeRun(["new", name, icon ?? "", parentPath ?? ""], res => {
+            if (done && res?.ok)
+                done(res.created);
+        });
+    }
+
+    /// Full order of one category: tokens are menu:<Name>, app:<id> or sep.
+    function setLayout(path: string, tokens: var): void {
+        root.kdeRun(["layout", path].concat(tokens), null);
+    }
+
+    function sort(path: string, by: string, all: bool): void {
+        root.kdeRun(["sort", path, by].concat(all ? ["all"] : []), null);
+    }
+
+    /// Icon choice from the picker for an app: { kind: "material"|"theme"|"file", value }.
+    function appSetIcon(appId: string, choice: var): void {
+        if (choice.kind === "material") {
+            const out = root.iconDir + "/" + choice.value + ".svg";
+            root.kdeRun(["material-svg", choice.value, out], res => {
+                if (res?.ok)
+                    root.appSet(appId, { icon: res.path });
+            });
+            return;
+        }
+        root.appSet(appId, { icon: choice.value });
+    }
+
+    function menuMove(path: string, newParent: string): void {
+        root.kdeRun(["menu-move", path, newParent], null);
+    }
+
+    function restorePreview(done: var): void {
+        root.kdeRun(["restore-preview"], res => done(res?.files ?? []));
+    }
+
+    function restoreSystem(): void {
+        root.kdeRun(["restore-system"], null);
+    }
+
+    /// key: Qt key combination as an int, 0 clears.
+    function setShortcut(appId: string, key: int, label: string): void {
+        root.kdeRun(["shortcut", appId, String(key), label], null);
+    }
+
+    function launch(app: var): void {
+        Quickshell.execDetached(["kioclient", "exec", app.file]);
+    }
+
+    function openFolder(app: var): void {
+        Quickshell.execDetached(["xdg-open", app.file.replace(/\/[^/]*$/, "")]);
+    }
+
+    function copyLocation(app: var): void {
+        Quickshell.clipboardText = app.file;
+    }
+
     function loadThemeIcons(): void {
         if (root.themeIcons.length > 0 || root.themeIconsLoading)
             return;
@@ -378,13 +371,16 @@ Scope {
         iconFile.setText(root.iconSvg);
         if (!root.shellReady)
             return;
-        // Older versions stored a launcher placement; drop it.
+        // Drop settings older versions used (launcher placement, the
+        // Caelestia-list mode and its edits).
         let cur = {};
         try {
             cur = JSON.parse(dataFile.text() || "{}") || {};
         } catch (e) {}
-        if (cur.placement !== undefined) {
-            delete cur.placement;
+        const stale = ["placement", "source", "categories", "assignments"].filter(k => cur[k] !== undefined);
+        if (stale.length > 0) {
+            for (const k of stale)
+                delete cur[k];
             root.write(cur);
         }
         LauncherCustomizer.pluginActive = true;
@@ -419,6 +415,7 @@ Scope {
         function sync(): void {
             root.refreshKde();
         }
+
 
 
         target: "launcherCustomizer"

@@ -143,7 +143,7 @@ def write_keyfile(path, keys, group="Desktop Entry"):
 # -------------------------------------------------------------- desktop files
 
 class App:
-    __slots__ = ("id", "path", "categories", "visible", "name")
+    __slots__ = ("id", "path", "categories", "visible", "name", "entry", "base", "nodisplay", "showable")
 
 
 _dir_cache = {}
@@ -168,9 +168,12 @@ def scan_app_dir(base):
                 a.path = path
                 a.name = localized(e, "Name")
                 a.categories = set(c for c in e.get("Categories", "").split(";") if c)
+                a.entry = e
+                a.base = base
+                a.nodisplay = truthy(e.get("NoDisplay"))
                 only = [d for d in e.get("OnlyShowIn", "").split(";") if d]
                 nots = [d for d in e.get("NotShowIn", "").split(";") if d]
-                ok = e.get("Type", "Application") == "Application" and not truthy(e.get("NoDisplay")) and not truthy(e.get("Hidden"))
+                ok = e.get("Type", "Application") == "Application" and not truthy(e.get("Hidden"))
                 if only and not any(d in only for d in DESKTOPS):
                     ok = False
                 if any(d in nots for d in DESKTOPS):
@@ -178,7 +181,9 @@ def scan_app_dir(base):
                 tryexec = e.get("TryExec")
                 if ok and tryexec and not (shutil.which(tryexec) or os.path.exists(tryexec)):
                     ok = False
-                a.visible = ok
+                # "Show hidden entries": NoDisplay apps that would otherwise be listed.
+                a.showable = ok
+                a.visible = ok and not a.nodisplay
                 found[did] = a
     _dir_cache[base] = found
     return found
@@ -279,6 +284,7 @@ class Menu:
         self.moves = []
         self.sources = set()      # menu files that define this menu
         self.entries = set()
+        self.hidden_entries = set()
 
     @property
     def path(self):
@@ -421,13 +427,17 @@ def evaluate(menu, inherited_dirs, allocated, second_pass):
                 chosen |= hits
             else:
                 chosen -= hits
+        hidden = {a for a in chosen if pool[a].showable and not pool[a].visible}
         chosen = {a for a in chosen if pool[a].visible}
         if second_pass:
             chosen -= allocated
+            hidden -= allocated
         menu.entries = chosen
+        menu.hidden_entries = hidden
         menu.pool = pool
         if not second_pass:
-            allocated |= chosen
+            # Hidden (NoDisplay) entries still count as placed, as in KDE.
+            allocated |= chosen | hidden
     for s in menu.subs.values():
         evaluate(s, dirs, allocated, second_pass)
 
@@ -569,9 +579,90 @@ def owner_is_user(menu, system_paths):
     return menu.path not in system_paths
 
 
-def node(menu, system_paths, hidden_ids):
-    subs = layout_order(menu, menu.layout if menu.layout is not None else menu.default_layout)
-    children = [node(s, system_paths, hidden_ids) for s in subs if not s.deleted and not s.name.startswith(".")]
+def strip_id(a):
+    return a[:-8] if a.endswith(".desktop") else a
+
+
+def effective_layout(menu):
+    """The menu's Layout, else the nearest DefaultLayout up the tree."""
+    if menu.layout is not None:
+        return menu.layout
+    m = menu
+    while m is not None:
+        if m.default_layout is not None:
+            return m.default_layout
+        m = m.parent
+    return None
+
+
+def ordered_items(menu, pool):
+    """Submenus, apps and separators of one menu in the order KDE shows them."""
+    subs = [x for x in menu.subs.values() if not x.deleted and not x.name.startswith(".")]
+    apps = sorted(menu.entries | menu.hidden_entries)
+    sub_by = {x.name: x for x in subs}
+    app_name = lambda aid: (pool.get(aid).name if pool.get(aid) else aid).lower()
+    out, used_m, used_a = [], set(), set()
+    lay = effective_layout(menu)
+    explicit_m = set()
+    explicit_a = set()
+    if lay is not None:
+        explicit_m = {(c.text or "").strip() for c in lay if c.tag == "Menuname"}
+        explicit_a = {(c.text or "").strip() for c in lay if c.tag == "Filename"}
+
+    def rest_menus():
+        r = sorted([x for x in subs if x.name not in used_m and x.name not in explicit_m], key=lambda x: display_name(x).lower())
+        used_m.update(x.name for x in r)
+        return [{"kind": "menu", "path": x.path} for x in r]
+
+    def rest_apps():
+        r = sorted([x for x in apps if x not in used_a and x not in explicit_a], key=app_name)
+        used_a.update(r)
+        return [{"kind": "app", "id": strip_id(x)} for x in r]
+
+    if lay is None:
+        out = rest_menus() + rest_apps()
+    else:
+        for c in lay:
+            t = (c.text or "").strip()
+            if c.tag == "Menuname" and t in sub_by and t not in used_m:
+                out.append({"kind": "menu", "path": sub_by[t].path})
+                used_m.add(t)
+            elif c.tag == "Filename" and t in apps and t not in used_a:
+                out.append({"kind": "app", "id": strip_id(t)})
+                used_a.add(t)
+            elif c.tag == "Separator":
+                out.append({"kind": "sep"})
+            elif c.tag == "Merge":
+                kind = c.get("type")
+                if kind == "menus":
+                    out += rest_menus()
+                elif kind == "files":
+                    out += rest_apps()
+                elif kind == "all":
+                    out += sorted(rest_menus() + rest_apps(), key=lambda it: (display_name(find_path(menu, it["path"])).lower() if it["kind"] == "menu" else app_name(it["id"] + ".desktop")))
+        # Anything a hand-written Layout forgot still shows in the editor.
+        out += rest_menus() + rest_apps()
+    # Tidy separators: no leading, trailing or doubled ones.
+    tidy = []
+    for it in out:
+        if it["kind"] == "sep" and (not tidy or tidy[-1]["kind"] == "sep"):
+            continue
+        tidy.append(it)
+    while tidy and tidy[-1]["kind"] == "sep":
+        tidy.pop()
+    return tidy
+
+
+def find_path(root_or_menu, path):
+    m = root_or_menu
+    while m.parent is not None:
+        m = m.parent
+    return find(m, path) or root_or_menu
+
+
+def node(menu, system_paths, pool):
+    subs = layout_order(menu, effective_layout(menu))
+    children = [node(x, system_paths, pool) for x in subs if not x.deleted and not x.name.startswith(".")]
     all_apps = set(menu.entries)
     for c in children:
         all_apps |= set(c["allApps"])
@@ -581,6 +672,7 @@ def node(menu, system_paths, hidden_ids):
     return {
         "path": menu.path,
         "name": display_name(menu),
+        "comment": localized(info, "Comment"),
         "icon": icon,
         "systemIcon": sysinfo.get("Icon", icon if not menu.dir_user else ""),
         "systemName": localized(sysinfo, "Name") if sysinfo else (display_name(menu) if not menu.dir_user else ""),
@@ -589,27 +681,124 @@ def node(menu, system_paths, hidden_ids):
         "hasOverride": bool(menu.dir_user and sysinfo),
         "hidden": truthy(info.get("NoDisplay")),
         "custom": owner_is_user(menu, system_paths),
-        "apps": sorted(a[:-8] if a.endswith(".desktop") else a for a in menu.entries),
-        "allApps": sorted(a[:-8] if a.endswith(".desktop") else a for a in all_apps),
+        "apps": sorted(strip_id(a) for a in menu.entries),
+        "hiddenApps": sorted(strip_id(a) for a in menu.hidden_entries),
+        "allApps": sorted(strip_id(a) if a.endswith(".desktop") else a for a in all_apps),
+        "items": ordered_items(menu, pool),
         "children": children,
+    }
+
+
+def all_apps_pool():
+    pool = {}
+    for d in [os.path.join(x, "applications") for x in reversed(DATA_PRIO)]:
+        pool.update(scan_app_dir(d))
+    return pool
+
+
+def read_shortcuts():
+    """desktop id -> shortcut text, from KDE's global shortcut config."""
+    out = {}
+    path = os.path.join(CONFIG_HOME, "kglobalshortcutsrc")
+    try:
+        cur = None
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.rstrip("\n")
+                m = re.match(r"^\[services\]\[(.+)\]$", line)
+                if m:
+                    cur = m.group(1)
+                    continue
+                if line.startswith("["):
+                    cur = None
+                    continue
+                if cur and line.startswith("_launch="):
+                    keys = [k for k in line.split("=", 1)[1].split("\t") if k and k != "none"]
+                    if keys:
+                        out[strip_id(cur)] = ", ".join(keys)
+    except OSError:
+        pass
+    return out
+
+
+def split_exec(cmd):
+    """Exec -> (environment, program, arguments) the way KDE's Menu Editor shows it."""
+    import shlex
+    try:
+        toks = shlex.split(cmd)
+    except ValueError:
+        return "", cmd, ""
+    env = []
+    if toks and toks[0] == "env":
+        toks = toks[1:]
+        while toks and "=" in toks[0] and not toks[0].startswith("-"):
+            env.append(toks.pop(0))
+    if not toks:
+        return " ".join(env), "", ""
+    return " ".join(env), toks[0], " ".join(shlex.quote(t) if (" " in t or not t) else t for t in toks[1:])
+
+
+def app_info(app, shortcuts):
+    e = app.entry or {}
+    local = os.path.realpath(app.base) == os.path.realpath(os.path.join(DATA_HOME, "applications"))
+    system = None
+    if local:
+        for d in DATA_DIRS:
+            p2 = os.path.join(d, "applications", app.id)
+            if os.path.exists(p2):
+                system = p2
+                break
+    env, prog, args = split_exec(e.get("Exec", ""))
+    only = [x for x in e.get("OnlyShowIn", "").split(";") if x]
+    return {
+        "id": strip_id(app.id),
+        "file": app.path,
+        "name": localized(e, "Name") or strip_id(app.id),
+        "genericName": localized(e, "GenericName"),
+        "comment": localized(e, "Comment"),
+        "keywords": localized(e, "Keywords"),
+        "icon": e.get("Icon", ""),
+        "exec": e.get("Exec", ""),
+        "env": env,
+        "program": prog,
+        "args": args,
+        "path": e.get("Path", ""),
+        "terminal": truthy(e.get("Terminal")),
+        "terminalOptions": e.get("TerminalOptions", "") or e.get("X-KDE-TerminalOptions", ""),
+        "otherUser": truthy(e.get("X-KDE-SubstituteUID")),
+        "username": e.get("X-KDE-Username", ""),
+        "startupNotify": e.get("StartupNotify", "true").strip().lower() != "false",
+        "gpu": truthy(e.get("PrefersNonDefaultGPU")) or truthy(e.get("X-KDE-RunOnDiscreteGpu")),
+        "noDisplay": app.nodisplay,
+        "onlyPlasma": only == ["KDE"],
+        "visible": app.visible,
+        "showable": app.showable,
+        "local": local,
+        "hasSystem": system is not None,
+        "created": truthy(e.get("X-Caelestia-Created")),
+        "shortcut": shortcuts.get(strip_id(app.id), ""),
     }
 
 
 def dump():
     root, root_file = load()
     system_paths = system_menu_paths()
+    pool = all_apps_pool()
     hidden = root.subs.get(".hidden")
-    hidden_ids = sorted(a[:-8] for a in (hidden.entries if hidden else set()) if a.endswith(".desktop"))
-    order = layout_order(root, root.layout if root.layout is not None else root.default_layout)
-    cats = [node(s, system_paths, hidden_ids) for s in order if not s.deleted and not s.name.startswith(".")]
-    manual = manual_apps()
+    hidden_ids = sorted(strip_id(a) for a in (hidden.entries if hidden else set()))
+    order = layout_order(root, effective_layout(root))
+    cats = [node(x, system_paths, pool) for x in order if not x.deleted and not x.name.startswith(".")]
+    shortcuts = read_shortcuts()
+    apps = {strip_id(aid): app_info(a, shortcuts) for aid, a in pool.items() if (a.entry or {}).get("Type", "Application") == "Application" and a.showable}
     return {
         "ok": True,
         "rootFile": root_file,
         "userFile": USER_MENU,
         "categories": cats,
+        "rootItems": ordered_items(root, pool),
+        "apps": apps,
         "hiddenApps": hidden_ids,
-        "manualApps": manual,
+        "manualApps": manual_apps(),
         "canUndo": bool(undo_entries()),
         "stamp": stamp(),
     }
@@ -618,7 +807,7 @@ def dump():
 def stamp():
     """Changes whenever anything that shapes the menu changes."""
     parts = []
-    for p in [USER_MENU] + glob.glob(os.path.join(USER_DIRS, "*.directory")) + glob.glob(os.path.join(CONFIG_HOME, "menus", "applications-merged", "*.menu")):
+    for p in [USER_MENU, os.path.join(CONFIG_HOME, "kglobalshortcutsrc")] + glob.glob(os.path.join(USER_DIRS, "*.directory")) + glob.glob(os.path.join(CONFIG_HOME, "menus", "applications-merged", "*.menu")):
         try:
             parts.append(f"{p}:{os.stat(p).st_mtime_ns}")
         except OSError:
@@ -880,6 +1069,10 @@ def cmd_set(path, kv):
         keys["NoDisplay"] = "true" if kv["hidden"] in ("1", "true") else None
     if "caelestia-icon" in kv:
         keys["X-Caelestia-Icon"] = kv["caelestia-icon"] or None
+    if "comment" in kv:
+        keys["Comment"] = kv["comment"] or None
+        for loc in LOCALES:
+            keys[f"Comment[{loc}]"] = kv["comment"] or None
     keys.setdefault("Type", "Directory")
     write_keyfile(target, keys)
 
@@ -897,14 +1090,18 @@ def cmd_reset_dir(path):
         write_keyfile(p, {"NoDisplay": None, "X-Caelestia-Icon": None})
 
 
-def cmd_new(name, icon):
+def cmd_new(name, icon, parent=""):
     root, _ = load()
     base = name.strip() or "New category"
-    path, n = base.replace("/", "-"), 2
-    while path in root.subs:
-        path = f"{base} {n}".replace("/", "-")
+    holder = find(root, parent) if parent else root
+    if holder is None:
+        raise RuntimeError(f"no such category: {parent}")
+    leaf, n = base.replace("/", "-"), 2
+    while leaf in holder.subs:
+        leaf = f"{base} {n}".replace("/", "-")
         n += 1
-    dirname = OWN_PREFIX + slug(path) + ".directory"
+    path = f"{parent}/{leaf}" if parent else leaf
+    dirname = OWN_PREFIX + slug(path.replace("/", "-")) + ".directory"
     tree = load_user_tree()
     um = user_menu(tree, path)
     if um.find("Directory") is None:
@@ -953,6 +1150,211 @@ def cmd_order(paths):
     ET.SubElement(lay, "Merge", {"type": "menus"})
     ET.SubElement(lay, "Merge", {"type": "files"})
     save_user_tree(tree)
+
+
+# ------------------------------------------------------------- app entries
+
+USER_APPS = os.path.join(DATA_HOME, "applications")
+APP_KEYS = {
+    "name": "Name", "genericName": "GenericName", "comment": "Comment", "keywords": "Keywords",
+    "icon": "Icon", "path": "Path", "terminalOptions": "TerminalOptions", "username": "X-KDE-Username",
+}
+LOCALIZED = {"Name", "GenericName", "Comment", "Keywords"}
+
+
+def app_paths(app_id):
+    aid = fid(app_id)
+    pool = all_apps_pool()
+    return aid, pool.get(aid), os.path.join(USER_APPS, aid)
+
+
+def cmd_app_set(app_id, kv):
+    """Edit an app entry like KDE's Menu Editor: a local copy that overrides the system one."""
+    import shlex
+    aid, app, target = app_paths(app_id)
+    if app is None and not os.path.exists(target):
+        raise RuntimeError(f"no such app: {app_id}")
+    if not os.path.exists(target):
+        os.makedirs(USER_APPS, exist_ok=True)
+        shutil.copyfile(app.path, target)
+        write_keyfile(target, {"X-Caelestia-Edited": "true"})
+    keys = {}
+    for k, v in kv.items():
+        if k in APP_KEYS:
+            key = APP_KEYS[k]
+            keys[key] = v or None
+            if key in LOCALIZED:
+                for loc in LOCALES:
+                    keys[f"{key}[{loc}]"] = v or None
+        elif k in ("terminal", "otherUser", "startupNotify", "gpu", "noDisplay"):
+            on = v in ("1", "true")
+            key = {"terminal": "Terminal", "otherUser": "X-KDE-SubstituteUID", "startupNotify": "StartupNotify",
+                   "gpu": "PrefersNonDefaultGPU", "noDisplay": "NoDisplay"}[k]
+            keys[key] = "true" if on else ("false" if k == "startupNotify" else None)
+        elif k == "onlyPlasma":
+            keys["OnlyShowIn"] = "KDE;" if v in ("1", "true") else None
+    if any(k in kv for k in ("env", "program", "args")):
+        cur = read_keyfile(target)
+        env0, prog0, args0 = split_exec(cur.get("Exec", ""))
+        env = kv.get("env", env0).strip()
+        prog = kv.get("program", prog0).strip()
+        args = kv.get("args", args0).strip()
+        parts = []
+        if env:
+            parts += ["env"] + env.split()
+        if prog:
+            parts.append(shlex.quote(prog) if " " in prog else prog)
+        cmd = " ".join(parts) + (" " + args if args else "")
+        keys["Exec"] = cmd.strip() or None
+    write_keyfile(target, keys)
+
+
+def cmd_app_reset(app_id):
+    """Back to the system's version of the entry (drops the local copy)."""
+    aid, _app, target = app_paths(app_id)
+    has_system = any(os.path.exists(os.path.join(d, "applications", aid)) for d in DATA_DIRS)
+    if os.path.exists(target) and has_system:
+        os.unlink(target)
+
+
+def cmd_app_new(name, menu_path):
+    base = "caelestia-" + slug(name or "launcher")
+    aid, n = base + ".desktop", 2
+    while os.path.exists(os.path.join(USER_APPS, aid)) or any(os.path.exists(os.path.join(d, "applications", aid)) for d in DATA_DIRS):
+        aid = f"{base}-{n}.desktop"
+        n += 1
+    os.makedirs(USER_APPS, exist_ok=True)
+    write_keyfile(os.path.join(USER_APPS, aid), {"Type": "Application", "Name": name or "New launcher", "Exec": "", "Icon": "application-x-executable", "X-Caelestia-Created": "true"})
+    if menu_path:
+        tree = load_user_tree()
+        add_filename_rule(user_menu(tree, menu_path), "Include", aid)
+        save_user_tree(tree)
+    return strip_id(aid)
+
+
+def cmd_app_delete(app_id):
+    """Delete a launcher the user made (local only) and every rule naming it."""
+    aid, _app, target = app_paths(app_id)
+    if any(os.path.exists(os.path.join(d, "applications", aid)) for d in DATA_DIRS):
+        raise RuntimeError("only launchers you made can be deleted; hide or remove this one instead")
+    if os.path.exists(target):
+        os.unlink(target)
+    cmd_reset_app(app_id)
+
+
+# ------------------------------------------------------------ layout, sort
+
+def cmd_layout(path, tokens):
+    """Explicit order of one menu: tokens are menu:<Name>, app:<id> or sep."""
+    tree = load_user_tree()
+    um = user_menu(tree, path) if path else tree
+    for e in um.findall("Layout"):
+        um.remove(e)
+    lay = ET.SubElement(um, "Layout")
+    for t in tokens:
+        if t == "sep":
+            ET.SubElement(lay, "Separator")
+        elif t.startswith("menu:"):
+            ET.SubElement(lay, "Menuname").text = t[5:]
+        elif t.startswith("app:"):
+            ET.SubElement(lay, "Filename").text = fid(t[4:])
+    ET.SubElement(lay, "Merge", {"type": "menus"})
+    ET.SubElement(lay, "Merge", {"type": "files"})
+    save_user_tree(tree)
+
+
+def cmd_sort(path, by, recursive):
+    root, _ = load()
+    pool = all_apps_pool()
+    start = find(root, path) if path else root
+    if start is None:
+        raise RuntimeError(f"no such category: {path}")
+    targets = []
+
+    def walk(m):
+        targets.append(m)
+        if recursive:
+            for x in m.subs.values():
+                if not x.deleted and not x.name.startswith("."):
+                    walk(x)
+    walk(start)
+
+    def app_key(aid):
+        a = pool.get(aid)
+        e = (a.entry if a else None) or {}
+        if by == "description":
+            return (localized(e, "GenericName") or localized(e, "Comment") or localized(e, "Name")).lower()
+        return (localized(e, "Name") or aid).lower()
+
+    def menu_key(m):
+        if by == "description":
+            return (localized(m.dir_info, "Comment") or display_name(m)).lower()
+        return display_name(m).lower()
+
+    tree = load_user_tree()
+    for m in targets:
+        subs = sorted([x for x in m.subs.values() if not x.deleted and not x.name.startswith(".")], key=menu_key)
+        apps = sorted(m.entries | m.hidden_entries, key=app_key)
+        um = user_menu(tree, m.path) if m.path else tree
+        for e in um.findall("Layout"):
+            um.remove(e)
+        lay = ET.SubElement(um, "Layout")
+        for x in subs:
+            ET.SubElement(lay, "Menuname").text = x.name
+        for a in apps:
+            ET.SubElement(lay, "Filename").text = a
+        ET.SubElement(lay, "Merge", {"type": "menus"})
+        ET.SubElement(lay, "Merge", {"type": "files"})
+    save_user_tree(tree)
+
+
+
+def cmd_menu_move(path, new_parent):
+    """Move a submenu under another menu (KDE Menu Editor's cut + paste of a submenu)."""
+    leaf = path.split("/")[-1]
+    new = f"{new_parent}/{leaf}" if new_parent else leaf
+    if new == path or new.startswith(path + "/"):
+        raise RuntimeError("cannot move a category into itself")
+    root, _ = load()
+    if find(root, new) is not None:
+        raise RuntimeError(f"{new} already exists")
+    tree = load_user_tree()
+    mv = ET.SubElement(tree, "Move")
+    ET.SubElement(mv, "Old").text = path
+    ET.SubElement(mv, "New").text = new
+    save_user_tree(tree)
+    return new
+
+# ------------------------------------------------------------ restore, keys
+
+def restore_targets():
+    files = [USER_MENU] if os.path.exists(USER_MENU) else []
+    for p in glob.glob(os.path.join(USER_DIRS, "*.directory")):
+        name = os.path.basename(p)
+        overrides = any(os.path.exists(os.path.join(d, "desktop-directories", name)) for d in DATA_DIRS)
+        if overrides or name.startswith(OWN_PREFIX):
+            files.append(p)
+    for p in glob.glob(os.path.join(USER_APPS, "*.desktop")):
+        e = read_keyfile(p)
+        if truthy(e.get("X-Caelestia-Edited")) or truthy(e.get("X-Caelestia-Created")):
+            files.append(p)
+    return files
+
+
+def cmd_restore():
+    for p in restore_targets():
+        if os.path.exists(p):
+            os.unlink(p)
+
+
+def cmd_shortcut(app_id, key, label):
+    """Set (or clear, key 0) an app's global shortcut through KDE's shortcut service."""
+    comp = fid(app_id)
+    action = ["4", comp, "_launch", label or strip_id(app_id), label or strip_id(app_id)]
+    base = ["busctl", "--user", "call", "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel"]
+    subprocess.run(base + ["doRegister", "as"] + action, check=True, capture_output=True, timeout=5)
+    keys = ["1", str(int(key))] if int(key) else ["0"]
+    subprocess.run(base + ["setForeignShortcut", "asai"] + action + keys, check=True, capture_output=True, timeout=5)
 
 
 def cmd_icons():
@@ -1022,8 +1424,20 @@ def cmd_material_svg(name, out):
     # Font units, y up -> 24px viewBox, y down.
     gs[name].draw(TransformPen(pen, (24 / upm, 0, 0, -24 / upm, 0, 24)))
     d = pen.getCommands()
+    # KDE recolours this to the active scheme; anything else shows the base
+    # colour, so start from the scheme's own text colour.
+    fg = "#232629"
+    rgb = read_keyfile(os.path.join(CONFIG_HOME, "kdeglobals"), "Colors:Window").get("ForegroundNormal", "")
+    if re.fullmatch(r"#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?", rgb.strip()):
+        fg = rgb.strip()[:7]
+    else:
+        try:
+            r, g, b = [int(x) for x in rgb.split(",")[:3]]
+            fg = f"#{r:02x}{g:02x}{b:02x}"
+        except ValueError:
+            pass
     svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">'
-           '<style id="current-color-scheme">.ColorScheme-Text{color:#232629;}</style>'
+           f'<style id="current-color-scheme">.ColorScheme-Text{{color:{fg};}}</style>'
            f'<path class="ColorScheme-Text" fill="currentColor" d="{d}"/></svg>\n')
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w") as fh:
@@ -1049,11 +1463,22 @@ def main(argv):
         if cmd == "material-svg":
             print(json.dumps(cmd_material_svg(args[0], args[1])))
             return 0
+        if cmd == "restore-preview":
+            print(json.dumps({"ok": True, "files": restore_targets()}))
+            return 0
+        result = None
         if cmd == "undo":
             undo()
+        elif cmd == "shortcut":
+            cmd_shortcut(args[0], args[1], args[2] if len(args) > 2 else "")
         else:
-            snapshot([USER_MENU] + all_user_dir_files() + ([os.path.join(USER_DIRS, OWN_PREFIX + slug(args[0]) + ".directory")] if cmd == "new" and args else []))
-            result = None
+            extra = []
+            if cmd in ("app-set", "app-reset", "app-delete") and args:
+                extra.append(os.path.join(USER_APPS, fid(args[0])))
+            if cmd == "restore-system":
+                extra += restore_targets()
+            snapshot([USER_MENU] + all_user_dir_files() + extra)
+            kv = lambda rest: dict(a.split("=", 1) for a in rest if "=" in a)
             if cmd == "move":
                 cmd_move(args[0], args[1], args[2:])
             elif cmd == "add":
@@ -1063,28 +1488,60 @@ def main(argv):
             elif cmd == "reset-app":
                 cmd_reset_app(args[0])
             elif cmd == "set":
-                cmd_set(args[0], dict(a.split("=", 1) for a in args[1:] if "=" in a))
+                cmd_set(args[0], kv(args[1:]))
             elif cmd == "reset-dir":
                 cmd_reset_dir(args[0])
             elif cmd == "new":
-                result = cmd_new(args[0], args[1] if len(args) > 1 else "")
+                result = cmd_new(args[0], args[1] if len(args) > 1 else "", args[2] if len(args) > 2 else "")
+                snapshot_add(os.path.join(USER_DIRS, OWN_PREFIX + slug(result.replace("/", "-")) + ".directory"))
             elif cmd == "delete":
                 cmd_delete(args[0])
             elif cmd == "order":
                 cmd_order(args)
+            elif cmd == "layout":
+                cmd_layout(args[0], args[1:])
+            elif cmd == "sort":
+                cmd_sort(args[0], args[1] if len(args) > 1 else "name", len(args) > 2 and args[2] == "all")
+            elif cmd == "app-set":
+                cmd_app_set(args[0], kv(args[1:]))
+            elif cmd == "app-reset":
+                cmd_app_reset(args[0])
+            elif cmd == "app-new":
+                result = cmd_app_new(args[0], args[1] if len(args) > 1 else "")
+                snapshot_add(os.path.join(USER_APPS, fid(result)))
+            elif cmd == "app-delete":
+                cmd_app_delete(args[0])
+            elif cmd == "restore-system":
+                cmd_restore()
+            elif cmd == "menu-move":
+                result = cmd_menu_move(args[0], args[1] if len(args) > 1 else "")
             else:
                 raise RuntimeError(f"unknown command {cmd}")
         rebuild_kde_cache()
         _dir_cache.clear()
         out = dump()
         out["command"] = cmd
-        if cmd == "new":
+        if result is not None:
             out["created"] = result
         print(json.dumps(out))
         return 0
     except Exception as e:  # report, never traceback into the shell log
         print(json.dumps({"ok": False, "command": cmd, "error": f"{type(e).__name__}: {e}"}))
         return 1
+
+
+def snapshot_add(path):
+    """Record a file the command just created, so undo removes it."""
+    entries = undo_entries()
+    if not entries:
+        return
+    d = os.path.join(UNDO_DIR, entries[-1])
+    mpath = os.path.join(d, "manifest.json")
+    with open(mpath) as f:
+        manifest = json.load(f)
+    manifest.append({"path": path, "saved": None})
+    with open(mpath, "w") as f:
+        json.dump(manifest, f)
 
 
 if __name__ == "__main__":

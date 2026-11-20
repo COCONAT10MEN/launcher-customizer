@@ -5,11 +5,8 @@ pragma Singleton
 // revert. Everything here is inert while the plugin is not running, so
 // disabling the plugin restores stock behaviour.
 //
-// Category sources:
-//   "kde"        (default) the KDE application menu, read by the plugin's
-//                kdemenu.py and kept in sync both ways
-//   "caelestia"  Caelestia's built-in list plus the edits saved in
-//                ~/.config/caelestia/launcher-customizer.json
+// The launcher's categories are the KDE application menu, read by the
+// plugin's kdemenu.py and kept in sync both ways.
 
 import QtQuick
 import Quickshell
@@ -27,11 +24,8 @@ Singleton {
     // The KDE menu as kdemenu.py reports it. Set by the plugin.
     property var kde: ({})
 
-    readonly property string source: root.data?.source === "caelestia" ? "caelestia" : "kde"
-    readonly property bool useKde: root.pluginActive && root.source === "kde" && root.kde?.ok === true
+    readonly property bool useKde: root.pluginActive && root.kde?.ok === true
     readonly property string iconStyle: root.data?.iconStyle === "theme" ? "theme" : "material"
-    readonly property var assignments: root.pluginActive && !root.useKde && root.data?.assignments && typeof root.data.assignments === "object" ? root.data.assignments : ({})
-    readonly property var userCategories: root.pluginActive && !root.useKde && Array.isArray(root.data?.categories) ? root.data.categories : []
 
     // "kde:<menu path>" -> { appId: true }, top-level categories including their subcategories.
     readonly property var kdeMembers: {
@@ -106,14 +100,6 @@ Singleton {
         return img ? { icon: "", iconSource: img } : { icon: "folder", iconSource: "" };
     }
 
-    /// Caelestia-mode icon strings: a Material name, "theme:<name>" or a file path.
-    function caelestiaIcon(icon: string): var {
-        if (icon.startsWith("theme:"))
-            return { icon: "", iconSource: root.imageFor(icon.slice(6)) };
-        if (icon.startsWith("/") || icon.startsWith("file://"))
-            return { icon: "", iconSource: root.imageFor(icon) };
-        return { icon: icon, iconSource: "" };
-    }
 
     // -------------------------------------------------------- definitions
 
@@ -141,52 +127,9 @@ Singleton {
 
     /// The category list the launcher shows.
     function definitionsFor(base: var): var {
-        return root.useKde ? root.kdeDefinitions(base) : root.merge(base);
+        return root.useKde ? root.kdeDefinitions(base) : base;
     }
 
-    /// Caelestia mode: the built-in list with the user's order, names, icons,
-    /// XDG tags, hidden flags and custom categories applied.
-    function merge(base: var): var {
-        const user = root.userCategories;
-        if (user.length === 0)
-            return base;
-
-        const byId = {};
-        for (const def of base)
-            byId[def.id] = def;
-
-        const out = [];
-        const seen = {};
-        for (const u of user) {
-            if (!u || typeof u.id !== "string" || seen[u.id])
-                continue;
-            seen[u.id] = true;
-            const b = byId[u.id];
-            if (!b && !u.custom)
-                continue; // a built-in a newer shell no longer has
-            if (u.hidden && u.id !== "all" && u.id !== "favorites")
-                continue;
-            const def = Object.assign({}, b ?? {}, { id: u.id });
-            if (typeof u.name === "string" && u.name.trim().length > 0)
-                def.name = u.name.trim();
-            if (typeof u.icon === "string" && u.icon.trim().length > 0)
-                Object.assign(def, root.caelestiaIcon(u.icon.trim()));
-            if (Array.isArray(u.xdg) && u.id !== "favorites" && u.id !== "all" && u.id !== "other")
-                def.xdg = u.xdg.filter(x => typeof x === "string" && x.length > 0);
-            if (!def.name)
-                def.name = u.id;
-            if (!def.icon && !def.iconSource)
-                def.icon = "label";
-            out.push(def);
-        }
-        // Built-ins added by a shell update after the user saved keep their
-        // default position.
-        for (let i = 0; i < base.length; i++) {
-            if (!seen[base[i].id])
-                out.splice(Math.min(i, out.length), 0, base[i]);
-        }
-        return out;
-    }
 
     FileView {
         path: root.path

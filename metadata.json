@@ -1,9 +1,9 @@
 {
   "id": "launcher-customizer",
   "name": "Launcher Customizer",
-  "description": "Organise the app launcher, synced both ways with the KDE application menu: rename, re-icon (Material Symbols, icon theme or your own SVG/PNG), hide, reorder and create categories, and move apps between them.",
+  "description": "Everything KDE's Menu Editor does, inside Caelestia: categories, subcategories, separators, launchers (name, program, arguments, environment, icon, terminal, other user, GPU, shortcut…), order, sorting, cut/copy/paste, drag and drop, hidden entries and restore, all synced both ways with KDE.",
   "icon": "icon.svg",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "type": "quickshell",
   "ui": "main.qml",
   "author": {
@@ -16,6 +16,7 @@
     "categories",
     "app drawer",
     "kde",
-    "menu"
+    "menu editor",
+    "kmenuedit"
   ]
 }

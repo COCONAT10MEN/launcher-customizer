@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "6"
+VERSION = "7"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -55,11 +55,7 @@ OPS = [
         "\n"
         '    /// The curated category a desktop entry belongs to, or "other".\n'
         "    function categoryForApp(app): string {\n"
-        "        // An app the user moved by hand goes where they put it.\n"
         '        const lcId = String(app?.id ?? "");\n'
-        "        const lcPick = lcId.length > 0 ? LauncherCustomizer.assignments[lcId] : undefined;\n"
-        "        if (lcPick && root.definitions.some(d => d.id === lcPick))\n"
-        "            return lcPick;\n"
         "        // Synced with KDE: the first KDE category the app is listed in.\n"
         "        if (LauncherCustomizer.useKde && lcId.length > 0)\n"
         "            return LauncherCustomizer.kdeFirst(root.definitions, lcId);\n",
