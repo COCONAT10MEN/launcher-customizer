@@ -30,14 +30,14 @@ Item {
         picker.query = "";
         searchField.text = "";
         picker.choice = null;
-        picker.visible = true;
+        picker.shown = true;
         if (picker.tab === "theme")
             picker.store.loadThemeIcons();
         searchField.forceActiveFocus();
     }
 
     function close(): void {
-        picker.visible = false;
+        picker.shown = false;
     }
 
     readonly property var materialNames: materialFile.loaded ? materialFile.text().split("\n").filter(n => n.length > 0) : []
@@ -62,7 +62,9 @@ Item {
         return all.filter(n => n.includes(q));
     }
 
-    visible: false
+    property bool shown: false
+
+    visible: picker.shown || scrim.opacity > 0
     z: 100
     anchors.fill: parent
 
@@ -92,11 +94,21 @@ Item {
 
     // Dim the editor behind; a click outside the card cancels.
     Rectangle {
+        id: scrim
+
         anchors.fill: parent
         color: Qt.alpha(Colours.palette.m3scrim, 0.45)
+        opacity: picker.shown ? 1 : 0
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.DefaultEffects
+            }
+        }
 
         MouseArea {
             anchors.fill: parent
+            enabled: picker.shown
             onClicked: picker.close()
         }
     }
@@ -105,6 +117,20 @@ Item {
         id: card
 
         anchors.centerIn: parent
+        opacity: picker.shown ? 1 : 0
+        scale: picker.shown ? 1 : 0.92
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.DefaultEffects
+            }
+        }
+
+        Behavior on scale {
+            Anim {
+                type: Anim.DefaultSpatial
+            }
+        }
         width: Math.min(parent.width - 48, 760)
         height: Math.min(parent.height - 48, 600)
         radius: Tokens.rounding.extraLarge

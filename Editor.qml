@@ -29,11 +29,13 @@ FloatingWindow {
     property bool showHidden: false
     property string search: ""
     property var expanded: ({})
+    property var listOpen: ({})             // subcategories unfolded in the middle pane
     property var clip: null                 // { mode: cut|copy, keys, from }
     property string pendingFocus: ""
     property bool focusName: false
     property string snack: ""
     property bool dragging: false
+    property bool hoveringEye: false
 
     readonly property var kd: LauncherCustomizer.kde ?? ({})
     readonly property var apps: win.kd.apps ?? ({})
@@ -75,19 +77,49 @@ FloatingWindow {
 
     // ------------------------------------------------------------ tree
 
+    // Categories with their subcategories and apps, in KDE's order. Each row
+    // has a stable key so the list can animate what changed.
     readonly property var treeRows: {
         const out = [];
-        const walk = (list, depth) => {
-            for (const n of list) {
-                if (!win.showHidden && n.hidden)
-                    continue;
-                out.push({ path: n.path, depth: depth, node: n, open: !!win.expanded[n.path] });
-                if (win.expanded[n.path])
-                    walk(n.children, depth + 1);
+        const walk = (path, depth) => {
+            for (const it of win.itemsOf(path)) {
+                if (it.kind === "menu") {
+                    const n = win.nodes[it.path];
+                    if (!n || (!win.showHidden && n.hidden))
+                        continue;
+                    out.push({ key: "m:" + n.path, kind: "menu", path: n.path, depth: depth });
+                    if (win.expanded[n.path])
+                        walk(n.path, depth + 1);
+                } else if (it.kind === "app" && path && win.appVisible(it.id)) {
+                    out.push({ key: "a:" + path + "/" + it.id, kind: "app", id: it.id, parent: path, depth: depth });
+                }
             }
         };
-        walk(win.kd.categories ?? [], 0);
+        walk("", 0);
         return out;
+    }
+
+    /// Whether a category has anything to unfold in the tree.
+    function hasContent(path: string): bool {
+        return win.itemsOf(path).some(it => (it.kind === "menu" && win.menuVisible(it.path)) || (it.kind === "app" && win.appVisible(it.id)));
+    }
+
+    function toggleExpand(path: string): void {
+        const e = Object.assign({}, win.expanded);
+        e[path] = !e[path];
+        win.expanded = e;
+    }
+
+    function toggleHidden(key: string): void {
+        if (key.startsWith("app:")) {
+            const a = win.apps[key.slice(4)];
+            if (a)
+                win.store.appSet(a.id, { noDisplay: !a.noDisplay });
+        } else if (key.startsWith("menu:")) {
+            const n = win.nodes[key.slice(5)];
+            if (n)
+                win.store.kdeSet(n.path, { hidden: n.hidden ? "0" : "1" });
+        }
     }
 
     function openCategory(path: string): void {
@@ -110,8 +142,26 @@ FloatingWindow {
         return path ? (win.nodes[path]?.items ?? []) : (win.kd.rootItems ?? []);
     }
 
-    function keyOf(it: var, i: int): string {
-        return it.kind === "app" ? "app:" + it.id : (it.kind === "menu" ? "menu:" + it.path : "sep:" + i);
+    function keyOf(it: var, i: int, parent: string): string {
+        return it.kind === "app" ? "app:" + it.id : (it.kind === "menu" ? "menu:" + it.path : "sep:" + (parent ?? win.cat) + "|" + i);
+    }
+
+    /// The category a selected row sits in (subcategories can be unfolded inline).
+    function parentOf(key: string): string {
+        return win.rows.find(r => r.key === key)?.parent ?? win.cat;
+    }
+
+    function fromsOf(keys: var): var {
+        const m = {};
+        for (const k of keys)
+            m[k] = win.search ? "" : win.parentOf(k);
+        return m;
+    }
+
+    function toggleListOpen(path: string): void {
+        const o = Object.assign({}, win.listOpen);
+        o[path] = !o[path];
+        win.listOpen = o;
     }
 
     readonly property var rows: {
@@ -124,21 +174,29 @@ FloatingWindow {
                     continue;
                 const hay = [a.name, a.genericName, a.comment, a.keywords, id].join(" ").toLowerCase();
                 if (hay.includes(q))
-                    out.push({ kind: "app", id: id, key: "app:" + id });
+                    out.push({ kind: "app", id: id, key: "app:" + id, rowKey: "app:" + id, parent: "", depth: 0 });
             }
             out.sort((x, y) => String(win.apps[x.id].name).localeCompare(String(win.apps[y.id].name)));
             return out;
         }
+        // The category's items in KDE order; unfolded subcategories show
+        // their own items right below them, indented.
         const out = [];
-        const items = win.itemsOf(win.cat);
-        for (let i = 0; i < items.length; i++) {
-            const it = items[i];
-            if (it.kind === "app" && !win.appVisible(it.id))
-                continue;
-            if (it.kind === "menu" && !win.menuVisible(it.path))
-                continue;
-            out.push(Object.assign({ key: win.keyOf(it, i), index: i }, it));
-        }
+        const walk = (path, depth) => {
+            const items = win.itemsOf(path);
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                if (it.kind === "app" && !win.appVisible(it.id))
+                    continue;
+                if (it.kind === "menu" && !win.menuVisible(it.path))
+                    continue;
+                const key = win.keyOf(it, i, path);
+                out.push(Object.assign({ key: key, rowKey: key + "@" + path, index: i, parent: path, depth: depth }, it));
+                if (it.kind === "menu" && win.listOpen[it.path])
+                    walk(it.path, depth + 1);
+            }
+        };
+        walk(win.cat, 0);
         return out;
     }
     readonly property var pickedKeys: Object.keys(win.picked).filter(k => win.picked[k])
@@ -198,21 +256,26 @@ FloatingWindow {
         }
         if (win.search)
             return;
-        const p = win.rows.findIndex(r => r.key === win.focusKey);
-        const q = p + delta;
-        if (p < 0 || q < 0 || q >= win.rows.length)
+        const r = win.rows.find(x => x.key === win.focusKey);
+        if (!r)
             return;
-        const r = win.rows[p];
-        win.moveToken(win.cat, r.index, win.rows[q].index);
+        // Only among the items of the same (sub)category.
+        const sib = win.rows.filter(x => x.parent === r.parent);
+        const p = sib.indexOf(r);
+        const q = p + delta;
+        if (p < 0 || q < 0 || q >= sib.length)
+            return;
+        win.moveToken(r.parent, r.index, sib[q].index);
         if (r.kind === "sep")
-            win.focusKey = "sep:" + win.rows[q].index;
+            win.focusKey = "sep:" + r.parent + "|" + sib[q].index;
         win.picked = { [win.focusKey]: true };
     }
 
     function reorderTo(dragKeys: var, targetKey: string): void {
-        const items = win.itemsOf(win.cat);
-        const t = win.tokensOf(win.cat);
-        const keys = items.map((it, i) => win.keyOf(it, i));
+        const parent = win.parentOf(targetKey);
+        const items = win.itemsOf(parent);
+        const t = win.tokensOf(parent);
+        const keys = items.map((it, i) => win.keyOf(it, i, parent));
         const moving = keys.map((k, i) => dragKeys.includes(k) ? i : -1).filter(i => i >= 0);
         if (moving.length === 0)
             return;
@@ -221,16 +284,17 @@ FloatingWindow {
         const rest = t.filter((_, i) => !moving.includes(i));
         const before = target < 0 ? rest.length : rest.indexOf(t[target]);
         rest.splice(before < 0 ? rest.length : before, 0, ...take);
-        win.store.setLayout(win.cat, rest);
+        win.store.setLayout(parent, rest);
     }
 
     function addSeparator(): void {
         if (!win.cat && win.active !== "tree")
             return;
-        const t = win.tokensOf(win.cat);
         const r = win.rows.find(r => r.key === win.focusKey);
+        const path = r ? r.parent : win.cat;
+        const t = win.tokensOf(path);
         t.splice(r ? r.index + 1 : t.length, 0, "sep");
-        win.store.setLayout(win.cat, t);
+        win.store.setLayout(path, t);
     }
 
     // --------------------------------------------- clipboard, remove, dnd
@@ -245,7 +309,10 @@ FloatingWindow {
         const keys = win.selectionKeys().filter(k => !k.startsWith("sep:") && !(mode === "copy" && k.startsWith("menu:")));
         if (keys.length === 0)
             return;
-        win.clip = { mode: mode, keys: keys, from: win.active === "tree" ? "" : win.cat };
+        const froms = {};
+        for (const k of keys)
+            froms[k] = win.active === "tree" ? "" : win.parentOf(k);
+        win.clip = { mode: mode, keys: keys, from: froms };
         win.toast(mode === "cut" ? qsTr("Cut %n item(s)", "", keys.length) : qsTr("Copied %n item(s)", "", keys.length), false);
     }
 
@@ -257,15 +324,17 @@ FloatingWindow {
             win.clip = null;
     }
 
-    function dropInto(path: string, keys: var, copy: bool, from: string): void {
+    /// from: the category each key comes from ({ key: path }) or one path for all.
+    function dropInto(path: string, keys: var, copy: bool, from: var): void {
         let n = 0;
         for (const k of keys) {
+            const f = typeof from === "string" ? from : (from?.[k] ?? "");
             if (k.startsWith("app:")) {
                 const id = k.slice(4);
                 if (copy)
                     win.store.kdeAdd(id, path);
                 else
-                    win.store.kdeMove(id, path, from ? [from] : []);
+                    win.store.kdeMove(id, path, f ? [f] : []);
                 n++;
             } else if (k.startsWith("menu:") && !copy) {
                 const p = k.slice(5);
@@ -283,17 +352,19 @@ FloatingWindow {
         const keys = win.selectionKeys();
         if (keys.length === 0)
             return;
-        const seps = [];
+        const seps = {};
         for (const k of keys) {
             if (k.startsWith("app:"))
-                win.store.kdeRemove(k.slice(4), win.cat);
+                win.store.kdeRemove(k.slice(4), win.parentOf(k));
             else if (k.startsWith("menu:"))
                 win.store.kdeDelete(k.slice(5));
-            else if (k.startsWith("sep:"))
-                seps.push(parseInt(k.slice(4)));
+            else if (k.startsWith("sep:")) {
+                const [path, i] = k.slice(4).split("|");
+                (seps[path] = seps[path] || []).push(parseInt(i));
+            }
         }
-        if (seps.length > 0)
-            win.store.setLayout(win.cat, win.tokensOf(win.cat).filter((_, i) => !seps.includes(i)));
+        for (const path of Object.keys(seps))
+            win.store.setLayout(path, win.tokensOf(path).filter((_, i) => !seps[path].includes(i)));
         win.picked = ({});
         win.focusKey = "";
         win.toast(qsTr("Removed %n item(s)", "", keys.length), true);
@@ -334,6 +405,7 @@ FloatingWindow {
 
     function toast(text: string, undoable: bool): void {
         win.snack = text;
+        snackBar.text = text;
         snackUndo.visible = undoable;
         snackTimer.restart();
     }
@@ -355,6 +427,11 @@ FloatingWindow {
         const acts = [];
         if (app && !many) {
             acts.push({ text: qsTr("Launch"), icon: "play_arrow", action: () => win.store.launch(app) });
+            acts.push({ separator: true });
+        }
+        if (r.kind === "menu" && !many) {
+            acts.push({ text: win.listOpen[r.path] ? qsTr("Fold") : qsTr("Unfold"), icon: win.listOpen[r.path] ? "unfold_less" : "unfold_more", action: () => win.toggleListOpen(r.path) });
+            acts.push({ text: qsTr("Open"), icon: "folder_open", action: () => win.openCategory(r.path) });
             acts.push({ separator: true });
         }
         acts.push({ text: qsTr("Cut"), icon: "content_cut", shortcut: "Ctrl+X", enabled: r.kind !== "sep", action: () => win.cutCopy("cut") });
@@ -381,7 +458,7 @@ FloatingWindow {
         if (app && !many && app.created)
             acts.push({ text: qsTr("Delete launcher"), icon: "delete_forever", danger: true, action: () => { win.store.appDelete(app.id); win.focusKey = ""; win.toast(qsTr("Deleted %1").arg(app.name), true); } });
         if (!win.search)
-            acts.push({ text: r.kind === "menu" ? qsTr("Delete") : qsTr("Remove from %1").arg(win.cat ? win.nodeName(win.cat) : qsTr("menu")), icon: "delete", shortcut: "Del", danger: true, action: () => win.removeSelected() });
+            acts.push({ text: r.kind === "menu" ? qsTr("Delete") : qsTr("Remove from %1").arg(win.parentOf(r.key) ? win.nodeName(win.parentOf(r.key)) : qsTr("menu")), icon: "delete", shortcut: "Del", danger: true, action: () => win.removeSelected() });
         popup.open(x, y, acts);
     }
 
@@ -426,7 +503,7 @@ FloatingWindow {
             { text: qsTr("Open KDE Menu Editor"), icon: "open_in_new", action: () => win.store.openKMenuEdit() },
             { text: qsTr("Restore to system menu…"), icon: "restart_alt", danger: true, action: () => win.store.restorePreview(files => {
                     confirm.count = files.length;
-                    confirm.visible = true;
+                    confirm.shown = true;
                 }) }
         ]);
     }
@@ -475,14 +552,14 @@ FloatingWindow {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (popup.visible)
+            if (popup.shown)
                 popup.close();
-            else if (iconPicker.visible)
+            else if (iconPicker.shown)
                 iconPicker.close();
-            else if (catPicker.visible)
+            else if (catPicker.shown)
                 catPicker.close();
-            else if (confirm.visible)
-                confirm.visible = false;
+            else if (confirm.shown)
+                confirm.shown = false;
             else if (win.search) {
                 searchField.text = "";
                 win.search = "";
@@ -634,33 +711,87 @@ FloatingWindow {
                             Layout.fillHeight: true
                             clip: true
                             spacing: 2
-                            model: win.treeRows
                             boundsBehavior: Flickable.StopAtBounds
+                            model: ScriptModel {
+                                values: win.treeRows
+                                objectProp: "key"
+                            }
                             ScrollBar.vertical: StyledScrollBar {
                                 flickable: tree
+                            }
+
+                            // Material 3 Expressive: rows unfold with a spatial spring,
+                            // colour and opacity follow the effects curve.
+                            add: Transition {
+                                Anim {
+                                    property: "opacity"
+                                    from: 0
+                                    to: 1
+                                    type: Anim.DefaultEffects
+                                }
+                                Anim {
+                                    property: "x"
+                                    from: -16
+                                    to: 0
+                                    type: Anim.DefaultSpatial
+                                }
+                            }
+                            remove: Transition {
+                                Anim {
+                                    property: "opacity"
+                                    to: 0
+                                    type: Anim.FastEffects
+                                }
+                            }
+                            displaced: Transition {
+                                Anim {
+                                    properties: "x,y"
+                                    type: Anim.DefaultSpatial
+                                }
+                                Anim {
+                                    property: "opacity"
+                                    to: 1
+                                    type: Anim.FastEffects
+                                }
                             }
 
                             delegate: StyledRect {
                                 id: tRow
 
                                 required property var modelData
-                                readonly property var n: modelData.node
-                                readonly property bool sel: win.cat === n.path && !win.search
-                                readonly property var ic: LauncherCustomizer.kdeIcon(n)
+                                readonly property bool isMenu: modelData.kind === "menu"
+                                readonly property var n: isMenu ? win.nodes[modelData.path] : null
+                                readonly property var app: isMenu ? null : win.apps[modelData.id]
+                                readonly property string itemKey: isMenu ? "menu:" + modelData.path : "app:" + modelData.id
+                                readonly property bool open: isMenu && !!win.expanded[modelData.path]
+                                readonly property bool sel: !win.search && (isMenu ? (win.cat === modelData.path && !win.focusKey.startsWith("app:")) : (win.cat === modelData.parent && win.focusKey === itemKey))
+                                readonly property bool isHidden: isMenu ? !!n?.hidden : !!app?.noDisplay
+                                readonly property var ic: n ? LauncherCustomizer.kdeIcon(n) : ({ icon: "", iconSource: "" })
 
                                 width: tree.width
-                                implicitHeight: 40
+                                implicitHeight: isMenu ? 40 : 36
                                 radius: Tokens.rounding.medium
-                                color: tDrop.containsDrag ? Colours.palette.m3primaryContainer : (sel ? Colours.palette.m3secondaryContainer : (tMouse.containsMouse ? Colours.palette.m3surfaceContainerHigh : "transparent"))
-                                opacity: n.hidden ? 0.55 : 1
+                                color: tDrop.containsDrag && isMenu ? Colours.palette.m3primaryContainer : (sel ? Colours.palette.m3secondaryContainer : (tMouse.containsMouse ? Colours.palette.m3surfaceContainerHigh : Qt.alpha(Colours.palette.m3surfaceContainerHigh, 0)))
+                                opacity: isHidden ? 0.55 : 1
+
+                                Behavior on color {
+                                    CAnim {}
+                                }
+
+                                Behavior on opacity {
+                                    Anim {
+                                        type: Anim.DefaultEffects
+                                    }
+                                }
 
                                 DropArea {
                                     id: tDrop
 
                                     anchors.fill: parent
+                                    enabled: tRow.isMenu
                                     keys: ["lc-items"]
                                     onDropped: drop => {
-                                        win.dropInto(tRow.n.path, ghost.keys, (drop.modifiers & Qt.ControlModifier) !== 0, win.cat);
+                                        win.dropInto(tRow.modelData.path, ghost.keys, (drop.modifiers & Qt.ControlModifier) !== 0, win.fromsOf(ghost.keys));
                                         drop.accept();
                                     }
                                 }
@@ -672,62 +803,103 @@ FloatingWindow {
                                     hoverEnabled: true
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onClicked: mouse => {
-                                        if (mouse.button === Qt.RightButton) {
-                                            const p = mapToItem(rootItem, mouse.x, mouse.y);
-                                            win.treeMenu(tRow.n.path, p.x, p.y);
+                                        const p = mapToItem(rootItem, mouse.x, mouse.y);
+                                        if (tRow.isMenu) {
+                                            if (mouse.button === Qt.RightButton)
+                                                win.treeMenu(tRow.modelData.path, p.x, p.y);
+                                            else
+                                                win.openCategory(tRow.modelData.path);
                                         } else {
-                                            win.openCategory(tRow.n.path);
+                                            if (win.cat !== tRow.modelData.parent)
+                                                win.openCategory(tRow.modelData.parent);
+                                            win.select(tRow.itemKey, 0);
+                                            if (mouse.button === Qt.RightButton) {
+                                                const r = win.rows.find(x => x.key === tRow.itemKey);
+                                                if (r)
+                                                    win.rowMenu(r, p.x, p.y);
+                                            }
                                         }
                                     }
                                     onDoubleClicked: {
-                                        const e = Object.assign({}, win.expanded);
-                                        e[tRow.n.path] = !e[tRow.n.path];
-                                        win.expanded = e;
+                                        if (tRow.isMenu)
+                                            win.toggleExpand(tRow.modelData.path);
+                                        else
+                                            win.focusName = true;
                                     }
                                 }
 
                                 RowLayout {
                                     anchors.fill: parent
                                     anchors.leftMargin: 4 + tRow.modelData.depth * 18
-                                    anchors.rightMargin: Tokens.padding.medium
+                                    anchors.rightMargin: Tokens.padding.small
                                     spacing: Tokens.spacing.small
 
-                                    MaterialIcon {
-                                        text: tRow.modelData.open ? "expand_more" : "chevron_right"
-                                        opacity: tRow.n.children.length > 0 ? 1 : 0
-                                        color: Colours.palette.m3onSurfaceVariant
-                                        fontStyle: Tokens.font.icon.small
+                                    // Unfold arrow: rotates with a fast spatial spring.
+                                    Item {
+                                        implicitWidth: 22
+                                        implicitHeight: 22
+
+                                        MaterialIcon {
+                                            anchors.centerIn: parent
+                                            text: "chevron_right"
+                                            visible: tRow.isMenu && win.hasContent(tRow.modelData.path)
+                                            rotation: tRow.open ? 90 : 0
+                                            color: Colours.palette.m3onSurfaceVariant
+                                            fontStyle: Tokens.font.icon.small
+
+                                            Behavior on rotation {
+                                                Anim {
+                                                    type: Anim.FastSpatial
+                                                }
+                                            }
+                                        }
 
                                         MouseArea {
                                             anchors.fill: parent
-                                            anchors.margins: -6
-                                            enabled: tRow.n.children.length > 0
-                                            onClicked: {
-                                                const e = Object.assign({}, win.expanded);
-                                                e[tRow.n.path] = !e[tRow.n.path];
-                                                win.expanded = e;
-                                            }
+                                            anchors.margins: -4
+                                            enabled: tRow.isMenu && win.hasContent(tRow.modelData.path)
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: win.toggleExpand(tRow.modelData.path)
                                         }
                                     }
 
                                     CategoryIcon {
+                                        visible: tRow.isMenu
                                         icon: tRow.ic.icon
                                         iconSource: tRow.ic.iconSource
                                         size: 20
                                         color: tRow.sel ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurfaceVariant
                                     }
 
-                                    StyledText {
-                                        Layout.fillWidth: true
-                                        text: tRow.n.name
-                                        elide: Text.ElideRight
-                                        color: tRow.sel ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
-                                        font: Tokens.font.label.large
+                                    IconImage {
+                                        visible: !tRow.isMenu
+                                        implicitSize: 20
+                                        asynchronous: true
+                                        source: tRow.app ? (LauncherCustomizer.imageFor(tRow.app.icon) || Quickshell.iconPath("application-x-executable")) : ""
                                     }
 
                                     StyledText {
-                                        text: String(tRow.n.allApps.length)
-                                        visible: tRow.n.allApps.length > 0
+                                        Layout.fillWidth: true
+                                        text: tRow.isMenu ? (tRow.n?.name ?? "") : (tRow.app?.name ?? "")
+                                        elide: Text.ElideRight
+                                        color: tRow.sel ? Colours.palette.m3onSecondaryContainer : (tRow.isMenu ? Colours.palette.m3onSurface : Colours.palette.m3onSurfaceVariant)
+                                        font: tRow.isMenu ? Tokens.font.label.large : Tokens.font.body.medium
+                                    }
+
+                                    // Quick hide: shows on hover, stays visible while hidden.
+                                    IconButton {
+                                        icon: tRow.isHidden ? "visibility_off" : "visibility"
+                                        type: IconButton.Text
+                                        visible: tMouse.containsMouse || tRow.isHidden || hovered
+                                        onClicked: win.toggleHidden(tRow.itemKey)
+                                        ToolTip.visible: hovered
+                                        ToolTip.delay: 600
+                                        ToolTip.text: tRow.isHidden ? qsTr("Show") : qsTr("Hide")
+                                    }
+
+                                    StyledText {
+                                        visible: tRow.isMenu && !tMouse.containsMouse && !tRow.isHidden && (tRow.n?.allApps.length ?? 0) > 0 && !win.hoveringEye
+                                        text: String(tRow.n?.allApps.length ?? 0)
                                         color: Colours.palette.m3onSurfaceVariant
                                         font: Tokens.font.label.medium
                                     }
@@ -833,10 +1005,57 @@ FloatingWindow {
                             Layout.fillHeight: true
                             clip: true
                             spacing: 2
-                            model: win.rows
                             boundsBehavior: Flickable.StopAtBounds
+                            model: ScriptModel {
+                                values: win.rows
+                                objectProp: "rowKey"
+                            }
                             ScrollBar.vertical: StyledScrollBar {
                                 flickable: list
+                            }
+
+                            add: Transition {
+                                Anim {
+                                    property: "opacity"
+                                    from: 0
+                                    to: 1
+                                    type: Anim.DefaultEffects
+                                }
+                                Anim {
+                                    property: "scale"
+                                    from: 0.94
+                                    to: 1
+                                    type: Anim.DefaultSpatial
+                                }
+                            }
+                            remove: Transition {
+                                Anim {
+                                    property: "opacity"
+                                    to: 0
+                                    type: Anim.FastEffects
+                                }
+                                Anim {
+                                    property: "scale"
+                                    to: 0.94
+                                    type: Anim.FastSpatial
+                                }
+                            }
+                            displaced: Transition {
+                                Anim {
+                                    property: "y"
+                                    type: Anim.DefaultSpatial
+                                }
+                                Anim {
+                                    properties: "opacity,scale"
+                                    to: 1
+                                    type: Anim.FastEffects
+                                }
+                            }
+                            move: Transition {
+                                Anim {
+                                    property: "y"
+                                    type: Anim.DefaultSpatial
+                                }
                             }
 
                             StyledText {
@@ -859,8 +1078,18 @@ FloatingWindow {
                                 width: list.width
                                 implicitHeight: kind === "sep" ? 22 : 54
                                 radius: Tokens.rounding.medium
-                                color: rDrop.containsDrag && kind === "menu" ? Colours.palette.m3primaryContainer : (sel ? Colours.palette.m3secondaryContainer : (rMouse.containsMouse ? Colours.palette.m3surfaceContainerHigh : "transparent"))
+                                color: rDrop.containsDrag && kind === "menu" ? Colours.palette.m3primaryContainer : (sel ? Colours.palette.m3secondaryContainer : (rMouse.containsMouse ? Colours.palette.m3surfaceContainerHigh : Qt.alpha(Colours.palette.m3surfaceContainerHigh, 0)))
                                 opacity: (row.app?.noDisplay || row.menuNode?.hidden) ? 0.55 : 1
+
+                                Behavior on color {
+                                    CAnim {}
+                                }
+
+                                Behavior on opacity {
+                                    Anim {
+                                        type: Anim.DefaultEffects
+                                    }
+                                }
 
                                 Rectangle {
                                     visible: rDrop.containsDrag && row.kind !== "menu"
@@ -878,7 +1107,7 @@ FloatingWindow {
                                     enabled: !win.search
                                     onDropped: drop => {
                                         if (row.kind === "menu" && !ghost.keys.includes(row.modelData.key))
-                                            win.dropInto(row.modelData.path, ghost.keys, (drop.modifiers & Qt.ControlModifier) !== 0, win.cat);
+                                            win.dropInto(row.modelData.path, ghost.keys, (drop.modifiers & Qt.ControlModifier) !== 0, win.fromsOf(ghost.keys));
                                         else
                                             win.reorderTo(ghost.keys, row.modelData.key);
                                         drop.accept();
@@ -912,7 +1141,7 @@ FloatingWindow {
                                     }
                                     onDoubleClicked: {
                                         if (row.kind === "menu")
-                                            win.openCategory(row.modelData.path);
+                                            win.toggleListOpen(row.modelData.path);
                                         else if (row.kind === "app")
                                             win.focusName = true;
                                     }
@@ -944,9 +1173,39 @@ FloatingWindow {
                                 RowLayout {
                                     visible: row.kind !== "sep"
                                     anchors.fill: parent
-                                    anchors.leftMargin: Tokens.padding.medium
+                                    anchors.leftMargin: Tokens.padding.small + (row.modelData.depth ?? 0) * 28
                                     anchors.rightMargin: Tokens.padding.medium
                                     spacing: Tokens.spacing.medium
+
+                                    // Drop-down for a subcategory: unfolds its items right here.
+                                    Item {
+                                        implicitWidth: 24
+                                        implicitHeight: 24
+                                        visible: !win.search
+
+                                        MaterialIcon {
+                                            anchors.centerIn: parent
+                                            text: "chevron_right"
+                                            visible: row.kind === "menu" && win.hasContent(row.modelData.path)
+                                            rotation: row.kind === "menu" && win.listOpen[row.modelData.path] ? 90 : 0
+                                            color: Colours.palette.m3onSurfaceVariant
+                                            fontStyle: Tokens.font.icon.small
+
+                                            Behavior on rotation {
+                                                Anim {
+                                                    type: Anim.FastSpatial
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            anchors.margins: -6
+                                            enabled: row.kind === "menu" && win.hasContent(row.modelData.path)
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: win.toggleListOpen(row.modelData.path)
+                                        }
+                                    }
 
                                     Item {
                                         implicitWidth: 32
@@ -1014,6 +1273,17 @@ FloatingWindow {
                                         text: qsTr("Cut")
                                         icon: "content_cut"
                                     }
+
+                                    // Quick hide, like in the tree.
+                                    IconButton {
+                                        icon: (row.app?.noDisplay || row.menuNode?.hidden) ? "visibility_off" : "visibility"
+                                        type: IconButton.Text
+                                        visible: row.kind !== "sep" && (rMouse.containsMouse || hovered)
+                                        onClicked: win.toggleHidden(row.modelData.key)
+                                        ToolTip.visible: hovered
+                                        ToolTip.delay: 600
+                                        ToolTip.text: (row.app?.noDisplay || row.menuNode?.hidden) ? qsTr("Show") : qsTr("Hide")
+                                    }
                                 }
                             }
                         }
@@ -1063,12 +1333,24 @@ FloatingWindow {
             }
         }
 
-        // undo toast
+        // undo toast: springs up from the bottom edge, fades away
         StyledRect {
+            id: snackBar
+
+            property real t: win.snack.length > 0 ? 1 : 0
+            property string text: ""
+
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: Tokens.padding.large * 2
-            visible: win.snack.length > 0
+            anchors.bottomMargin: Tokens.padding.large * 2 * t - 40 * (1 - t)
+            visible: t > 0.01
+            opacity: Math.min(1, t)
+
+            Behavior on t {
+                Anim {
+                    type: Anim.DefaultSpatial
+                }
+            }
             width: snackRow.implicitWidth + Tokens.padding.large * 2
             height: 48
             radius: Tokens.rounding.full
@@ -1082,7 +1364,7 @@ FloatingWindow {
                 spacing: Tokens.spacing.medium
 
                 StyledText {
-                    text: win.snack
+                    text: snackBar.text
                     color: Colours.palette.m3inverseOnSurface
                     font: Tokens.font.body.medium
                 }
@@ -1106,24 +1388,49 @@ FloatingWindow {
             id: confirm
 
             property int count: 0
+            property bool shown: false
 
             anchors.fill: parent
-            visible: false
+            visible: confirm.shown || confirmScrim.opacity > 0
             z: 180
 
             Rectangle {
+                id: confirmScrim
+
                 anchors.fill: parent
                 color: Qt.alpha(Colours.palette.m3scrim, 0.45)
+                opacity: confirm.shown ? 1 : 0
+
+                Behavior on opacity {
+                    Anim {
+                        type: Anim.DefaultEffects
+                    }
+                }
 
                 MouseArea {
                     anchors.fill: parent
-                    onClicked: confirm.visible = false
+                    enabled: confirm.shown
+                    onClicked: confirm.shown = false
                 }
             }
 
             StyledRect {
                 anchors.centerIn: parent
+                opacity: confirm.shown ? 1 : 0
+                scale: confirm.shown ? 1 : 0.92
                 width: 440
+
+                Behavior on opacity {
+                    Anim {
+                        type: Anim.DefaultEffects
+                    }
+                }
+
+                Behavior on scale {
+                    Anim {
+                        type: Anim.DefaultSpatial
+                    }
+                }
                 height: confirmCol.implicitHeight + Tokens.padding.large * 2
                 radius: Tokens.rounding.extraLarge
                 color: Colours.palette.m3surfaceContainerHigh
@@ -1153,13 +1460,13 @@ FloatingWindow {
                         TextButton {
                             text: qsTr("Cancel")
                             type: TextButton.Text
-                            onClicked: confirm.visible = false
+                            onClicked: confirm.shown = false
                         }
 
                         TextButton {
                             text: qsTr("Restore")
                             onClicked: {
-                                confirm.visible = false;
+                                confirm.shown = false;
                                 win.store.restoreSystem();
                                 win.cat = "";
                                 win.focusKey = "";
@@ -1181,7 +1488,7 @@ FloatingWindow {
             onPicked: key => {
                 catPicker.close();
                 const keys = win.selectionKeys().filter(k => k.startsWith("app:"));
-                win.dropInto(key, keys, win.pickMode === "add", win.search ? "" : win.cat);
+                win.dropInto(key, keys, win.pickMode === "add", win.fromsOf(keys));
             }
         }
 

@@ -3,7 +3,7 @@
   "name": "Launcher Customizer",
   "description": "Make the app launcher yours: create, rename, reorder and re-icon categories, put any app anywhere, edit apps (command, icon, terminal, GPU…), add global shortcuts and your own launchers. Shared with KDE's menu, so everything stays in sync.",
   "icon": "icon.svg",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "type": "quickshell",
   "ui": "main.qml",
   "author": {

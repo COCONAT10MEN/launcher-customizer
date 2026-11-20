@@ -14,25 +14,27 @@ Item {
     property var actions: []
     property real menuX: 0
     property real menuY: 0
+    property bool shown: false
 
     function open(x: real, y: real, actions: var): void {
         menu.actions = actions;
         menu.menuX = x;
         menu.menuY = y;
-        menu.visible = true;
+        menu.shown = true;
         list.forceActiveFocus();
     }
 
     function close(): void {
-        menu.visible = false;
+        menu.shown = false;
     }
 
-    visible: false
+    visible: menu.shown || card.opacity > 0
     z: 200
     anchors.fill: parent
 
     MouseArea {
         anchors.fill: parent
+        enabled: menu.shown
         acceptedButtons: Qt.AllButtons
         onPressed: menu.close()
     }
@@ -46,6 +48,22 @@ Item {
         height: list.implicitHeight + Tokens.padding.small * 2
         radius: Tokens.rounding.medium
         color: Colours.palette.m3surfaceContainerHighest
+        // Material 3 Expressive: grows out of where it was opened.
+        transformOrigin: Item.TopLeft
+        opacity: menu.shown ? 1 : 0
+        scale: menu.shown ? 1 : 0.9
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.FastEffects
+            }
+        }
+
+        Behavior on scale {
+            Anim {
+                type: Anim.FastSpatial
+            }
+        }
 
         MouseArea {
             anchors.fill: parent
@@ -88,7 +106,11 @@ Item {
                         visible: !row.sep
                         anchors.fill: parent
                         radius: Tokens.rounding.small
-                        color: rowMouse.containsMouse && row.on ? Colours.palette.m3surfaceContainerHigh : "transparent"
+                        color: rowMouse.containsMouse && row.on ? Colours.palette.m3surfaceContainerHigh : Qt.alpha(Colours.palette.m3surfaceContainerHigh, 0)
+
+                        Behavior on color {
+                            CAnim {}
+                        }
 
                         MouseArea {
                             id: rowMouse

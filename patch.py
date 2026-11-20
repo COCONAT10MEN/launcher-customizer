@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "7"
+VERSION = "10"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -96,26 +96,6 @@ OPS = [
         "import qs.utils\nimport qs.modules.launcher.services\n",
     ),
     (
-        "modules/launcher/items/AppContextMenu.qml",
-        "        Controls.MenuItem {\n"
-        '            text: qsTr("App info")\n',
-        "        Controls.MenuItem {\n"
-        '            text: qsTr("Move to category…")\n'
-        '            icon: "drive_file_move"\n'
-        "            visible: LauncherCustomizer.pluginActive\n"
-        "            onClicked: {\n"
-        "                const appId = root.app?.id;\n"
-        "                if (!appId)\n"
-        "                    return;\n"
-        "                LauncherCustomizer.requestEdit(appId);\n"
-        "                if (root.visibilities)\n"
-        "                    root.visibilities.launcher = false;\n"
-        "            }\n"
-        "        },\n"
-        "        Controls.MenuItem {\n"
-        '            text: qsTr("App info")\n',
-    ),
-    (
         "modules/launcher/services/Categories.qml",
         "    function visibleCategories(all: list<var>): list<var> {\n",
         "    function visibleCategories(all: list<var>): list<var> {\n"
@@ -171,6 +151,343 @@ OPS = [
         '                                        LauncherCustomizer.requestEdit("");\n'
         "                                        return;\n"
         "                                    }\n",
+    ),
+    (
+        'modules/launcher/items/AppContextMenu.qml',
+        '                Launch.exec(["kmenuedit", desktopFile]);\n',
+        '                // Launcher Customizer: app details open in its editor.\n'
+        '                if (LauncherCustomizer.pluginActive)\n'
+        '                    LauncherCustomizer.requestEdit(root.app.id);\n'
+        '                else\n'
+        '                    Launch.exec(["kmenuedit", desktopFile]);\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        'import qs.modules.launcher.services\n',
+        'import qs.modules.launcher.services\n'
+        'import Quickshell.Widgets\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        '    property var visibleCategories: []\n',
+        '    property var visibleCategories: []\n'
+        '\n'
+        '    // Launcher Customizer: KDE subcategories as sections, and the custom\n'
+        '    // order you set by dragging tiles.\n'
+        '    property var lcSections: []\n'
+        '    readonly property bool lcCustom: sortSettings.sortMode === "custom" && LauncherCustomizer.pluginActive\n'
+        '    property var lcDrag: null\n'
+        '    property string lcDropId: ""\n'
+        '    property bool lcDropAfter: false\n'
+        '    property point lcDragPos: Qt.point(0, 0)\n'
+        '\n'
+        '    function lcGroupOf(id: string): var {\n'
+        '        if (gridModel.values.some(a => a.id === id))\n'
+        '            return { cat: root.currentCategory, ids: gridModel.values.map(a => a.id) };\n'
+        '        for (const sec of root.lcSections)\n'
+        '            if (sec.apps.some(a => a.id === id))\n'
+        '                return { cat: sec.id, ids: sec.apps.map(a => a.id) };\n'
+        '        return null;\n'
+        '    }\n'
+        '\n'
+        '    function lcTileAt(scenePos: point): var {\n'
+        '        const gp = grid.mapFromItem(null, scenePos.x, scenePos.y);\n'
+        '        const i = grid.indexAt(gp.x + grid.contentX, gp.y + grid.contentY);\n'
+        '        if (i >= 0 && i < gridModel.values.length) {\n'
+        '            const cell = grid.itemAtIndex(i);\n'
+        '            const local = cell ? cell.mapFromItem(null, scenePos.x, scenePos.y) : Qt.point(0, 0);\n'
+        '            return { id: gridModel.values[i].id, after: cell ? local.x > cell.width / 2 : false };\n'
+        '        }\n'
+        '        let item = grid.footerItem;\n'
+        '        let p = item ? item.mapFromItem(null, scenePos.x, scenePos.y) : null;\n'
+        '        while (item) {\n'
+        '            if (String(item.objectName).startsWith("lcTile:"))\n'
+        '                return { id: String(item.objectName).slice(7), after: p.x > item.width / 2 };\n'
+        '            const c = item.childAt(p.x, p.y);\n'
+        '            if (!c)\n'
+        '                break;\n'
+        '            p = c.mapFromItem(item, p.x, p.y);\n'
+        '            item = c;\n'
+        '        }\n'
+        '        return null;\n'
+        '    }\n'
+        '\n'
+        '    function lcDragBegin(tile: var): void {\n'
+        '        const g = root.lcGroupOf(tile.modelData.id);\n'
+        '        if (g)\n'
+        '            root.lcDrag = { id: tile.modelData.id, icon: tile.modelData.icon, cat: g.cat, ids: g.ids };\n'
+        '    }\n'
+        '\n'
+        '    function lcDragMove(scenePos: point): void {\n'
+        '        if (!root.lcDrag)\n'
+        '            return;\n'
+        '        root.lcDragPos = grid.mapFromItem(null, scenePos.x, scenePos.y);\n'
+        '        const t = root.lcTileAt(scenePos);\n'
+        '        if (t && t.id !== root.lcDrag.id && root.lcDrag.ids.includes(t.id)) {\n'
+        '            root.lcDropId = t.id;\n'
+        '            root.lcDropAfter = t.after;\n'
+        '        } else {\n'
+        '            root.lcDropId = "";\n'
+        '        }\n'
+        '    }\n'
+        '\n'
+        '    function lcDragEnd(): void {\n'
+        '        const d = root.lcDrag;\n'
+        '        if (d && root.lcDropId) {\n'
+        '            const ids = d.ids.filter(x => x !== d.id);\n'
+        '            let at = ids.indexOf(root.lcDropId);\n'
+        '            if (root.lcDropAfter)\n'
+        '                at++;\n'
+        '            ids.splice(at, 0, d.id);\n'
+        '            LauncherCustomizer.requestReorder(d.cat, ids);\n'
+        '            // Show the new order at once; the saved one takes over on the next refresh.\n'
+        '            if (d.cat === root.currentCategory) {\n'
+        '                const byId = {};\n'
+        '                for (const a of gridModel.values)\n'
+        '                    byId[a.id] = a;\n'
+        '                gridModel.values = ids.map(x => byId[x]).filter(Boolean);\n'
+        '            } else {\n'
+        '                root.lcSections = root.lcSections.map(sec => {\n'
+        '                    if (sec.id !== d.cat)\n'
+        '                        return sec;\n'
+        '                    const byId = {};\n'
+        '                    for (const a of sec.apps)\n'
+        '                        byId[a.id] = a;\n'
+        '                    return Object.assign({}, sec, { apps: ids.map(x => byId[x]).filter(Boolean) });\n'
+        '                });\n'
+        '            }\n'
+        '        }\n'
+        '        root.lcDrag = null;\n'
+        '        root.lcDropId = "";\n'
+        '    }\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        '        const nextApps = root.sortedApps(Categories.appsFor(root.currentCategory, all));\n',
+        '        // Launcher Customizer: sections for KDE subcategories, and the custom order.\n'
+        '        const lcArr = LauncherCustomizer.arrange(root.currentCategory, Categories.appsFor(root.currentCategory, all), all, sortSettings.sortMode, l => root.sortedApps(l));\n'
+        '        const nextApps = lcArr.top;\n'
+        '        root.lcSections = lcArr.sections;\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        '    implicitHeight: root.padding * 2 + (root.count === 0 ? root.tileCellHeight * 2 : root.rows * root.tileCellHeight)\n',
+        '    implicitHeight: root.padding * 2 + (root.count === 0 ? (root.lcSections.length > 0 ? 0 : root.tileCellHeight * 2) : root.rows * root.tileCellHeight) + (grid.footerItem?.height ?? 0)\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        '                StyledScrollBar.vertical: StyledScrollBar {\n'
+        '                    flickable: grid\n'
+        '                }\n',
+        '                StyledScrollBar.vertical: StyledScrollBar {\n'
+        '                    flickable: grid\n'
+        '                }\n'
+        '\n'
+        '                // Launcher Customizer: one section per KDE subcategory.\n'
+        '                footer: Column {\n'
+        '                    width: grid.width\n'
+        '                    bottomPadding: root.lcSections.length > 0 ? Tokens.spacing.medium : 0\n'
+        '\n'
+        '                    Repeater {\n'
+        '                        model: root.lcSections\n'
+        '\n'
+        '                        delegate: Column {\n'
+        '                            id: lcSec\n'
+        '\n'
+        '                            required property var modelData\n'
+        '\n'
+        '                            width: grid.width\n'
+        '                            topPadding: Tokens.spacing.large\n'
+        '                            spacing: Tokens.spacing.small\n'
+        '\n'
+        '                            Row {\n'
+        '                                leftPadding: Tokens.padding.small\n'
+        '                                spacing: Tokens.spacing.small\n'
+        '\n'
+        '                                MaterialIcon {\n'
+        '                                    anchors.verticalCenter: parent.verticalCenter\n'
+        '                                    visible: !!lcSec.modelData.icon\n'
+        '                                    text: lcSec.modelData.icon ?? ""\n'
+        '                                    color: Colours.palette.m3primary\n'
+        '                                    fontStyle: Tokens.font.icon.small\n'
+        '                                }\n'
+        '\n'
+        '                                IconImage {\n'
+        '                                    anchors.verticalCenter: parent.verticalCenter\n'
+        '                                    visible: !lcSec.modelData.icon && !!lcSec.modelData.iconSource\n'
+        '                                    implicitSize: visible ? 18 : 0\n'
+        '                                    source: lcSec.modelData.iconSource ?? ""\n'
+        '                                }\n'
+        '\n'
+        '                                StyledText {\n'
+        '                                    anchors.verticalCenter: parent.verticalCenter\n'
+        '                                    text: lcSec.modelData.name\n'
+        '                                    color: Colours.palette.m3onSurfaceVariant\n'
+        '                                    font: Tokens.font.label.large\n'
+        '                                }\n'
+        '                            }\n'
+        '\n'
+        '                            Flow {\n'
+        '                                width: grid.width\n'
+        '                                spacing: Tokens.spacing.medium\n'
+        '\n'
+        '                                Repeater {\n'
+        '                                    model: lcSec.modelData.apps\n'
+        '\n'
+        '                                    delegate: Item {\n'
+        '                                        id: lcCell\n'
+        '\n'
+        '                                        required property var modelData\n'
+        '\n'
+        '                                        objectName: "lcTile:" + lcCell.modelData.id\n'
+        '                                        implicitWidth: lcTile.implicitWidth\n'
+        '                                        implicitHeight: lcTile.implicitHeight\n'
+        '\n'
+        '                                        AppTile {\n'
+        '                                            id: lcTile\n'
+        '\n'
+        '                                            modelData: lcCell.modelData\n'
+        '                                            index: -1\n'
+        '                                            selected: false\n'
+        '                                            browser: root\n'
+        '                                        }\n'
+        '                                    }\n'
+        '                                }\n'
+        '                            }\n'
+        '                        }\n'
+        '                    }\n'
+        '                }\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        '            Column {\n'
+        '                anchors.centerIn: parent\n'
+        '                spacing: Tokens.spacing.medium\n'
+        '                visible: grid.count === 0\n',
+        '            // Launcher Customizer: the tile being dragged.\n'
+        '            StyledRect {\n'
+        '                visible: !!root.lcDrag\n'
+        '                z: 20\n'
+        '                x: root.lcDragPos.x - width / 2\n'
+        '                y: root.lcDragPos.y - height / 2\n'
+        '                implicitWidth: 64\n'
+        '                implicitHeight: 64\n'
+        '                radius: Tokens.rounding.large\n'
+        '                color: Colours.palette.m3secondaryContainer\n'
+        '                scale: visible ? 1.08 : 0.8\n'
+        '\n'
+        '                IconImage {\n'
+        '                    anchors.centerIn: parent\n'
+        '                    implicitSize: 44\n'
+        '                    source: root.lcDrag ? Quickshell.iconPath(root.lcDrag.icon, "application-x-executable") : ""\n'
+        '                }\n'
+        '\n'
+        '                Behavior on scale {\n'
+        '                    Anim {\n'
+        '                        type: Anim.FastSpatial\n'
+        '                    }\n'
+        '                }\n'
+        '            }\n'
+        '\n'
+        '            Column {\n'
+        '                anchors.centerIn: parent\n'
+        '                spacing: Tokens.spacing.medium\n'
+        '                visible: grid.count === 0 && root.lcSections.length === 0\n',
+    ),
+    (
+        'modules/launcher/items/AppTile.qml',
+        '    Item {\n'
+        '        id: page\n',
+        '    // Launcher Customizer: in the custom order, drag a tile to move it. This\n'
+        '    // area keeps the grid from taking the drag over (it would scroll instead),\n'
+        "    // so it also handles the tile's clicks while the custom order is on.\n"
+        '    MouseArea {\n'
+        '        id: lcDragArea\n'
+        '\n'
+        '        property point start\n'
+        '        property bool moved: false\n'
+        '\n'
+        '        anchors.fill: parent\n'
+        '        z: 50\n'
+        '        enabled: !!root.browser?.lcCustom && !!root.modelData\n'
+        '        acceptedButtons: Qt.LeftButton | Qt.RightButton\n'
+        '        preventStealing: true\n'
+        '        cursorShape: moved ? Qt.ClosedHandCursor : Qt.PointingHandCursor\n'
+        '\n'
+        '        onPressed: mouse => {\n'
+        '            start = Qt.point(mouse.x, mouse.y);\n'
+        '            moved = false;\n'
+        '        }\n'
+        '        onPositionChanged: mouse => {\n'
+        '            if (!pressed || !(mouse.buttons & Qt.LeftButton))\n'
+        '                return;\n'
+        '            if (!moved && Math.hypot(mouse.x - start.x, mouse.y - start.y) > 8) {\n'
+        '                moved = true;\n'
+        '                root.browser.lcDragBegin(root);\n'
+        '            }\n'
+        '            if (moved)\n'
+        '                root.browser.lcDragMove(mapToItem(null, mouse.x, mouse.y));\n'
+        '        }\n'
+        '        onReleased: {\n'
+        '            if (moved)\n'
+        '                root.browser.lcDragEnd();\n'
+        '        }\n'
+        '        onClicked: mouse => {\n'
+        '            if (moved)\n'
+        '                return;\n'
+        '            if (mouse.button === Qt.RightButton)\n'
+        '                root.browser.openContextMenu(root.modelData, root);\n'
+        '            else\n'
+        '                root.browser.launch(root.modelData);\n'
+        '        }\n'
+        '    }\n'
+        '\n'
+        '    Rectangle {\n'
+        '        visible: !!root.browser?.lcDrag && root.browser?.lcDropId === (root.modelData?.id ?? "")\n'
+        '        z: 5\n'
+        '        width: 3\n'
+        '        radius: 2\n'
+        '        height: parent.height * 0.7\n'
+        '        anchors.verticalCenter: parent.verticalCenter\n'
+        '        x: root.browser?.lcDropAfter ? parent.width - 1 : -2\n'
+        '        color: Colours.palette.m3primary\n'
+        '    }\n'
+        '\n'
+        '    Item {\n'
+        '        id: page\n',
+    ),
+    (
+        'modules/launcher/Content.qml',
+        '            icon: list.currentList?.sortMode === "alpha" ? "sort_by_alpha" : "trending_up"\n',
+        '            icon: list.currentList?.sortMode === "alpha" ? "sort_by_alpha" : (list.currentList?.sortMode === "custom" ? "drag_indicator" : "trending_up")\n',
+    ),
+    (
+        'modules/launcher/Content.qml',
+        '                trailingIcon: list.currentList?.sortMode === "alpha" ? "" : "check"\n',
+        '                trailingIcon: list.currentList?.sortMode === "alpha" || list.currentList?.sortMode === "custom" ? "" : "check"\n',
+    ),
+    (
+        'modules/launcher/Content.qml',
+        '                    list.currentList?.setSortMode("alpha");\n'
+        '                }\n'
+        '            }\n'
+        '        ]\n',
+        '                    list.currentList?.setSortMode("alpha");\n'
+        '                }\n'
+        '            },\n'
+        '            // Launcher Customizer: your own order; drag tiles to arrange them.\n'
+        '            MenuItem {\n'
+        '                text: qsTr("Custom")\n'
+        '                icon: "drag_indicator"\n'
+        '                visible: LauncherCustomizer.pluginActive\n'
+        '                trailingIcon: list.currentList?.sortMode === "custom" ? "check" : ""\n'
+        '\n'
+        '                onClicked: {\n'
+        '                    sortMenu.expanded = false;\n'
+        '                    list.currentList?.setSortMode("custom");\n'
+        '                }\n'
+        '            }\n'
+        '        ]\n',
     ),
 ]
 

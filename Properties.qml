@@ -143,7 +143,30 @@ Item {
             target: props.editor
         }
 
+        // Material 3 Expressive: the details rise in when the selection changes.
+        opacity: 0
+
+        ParallelAnimation {
+            id: afAppear
+
+            Anim {
+                target: af
+                property: "opacity"
+                from: 0
+                to: 1
+                type: Anim.DefaultEffects
+            }
+            Anim {
+                target: af
+                property: "y"
+                from: 16
+                to: 0
+                type: Anim.DefaultSpatial
+            }
+        }
+
         Component.onCompleted: {
+            afAppear.start();
             if (props.editor.focusName) {
                 props.editor.focusName = false;
                 nameField.forceActiveFocus();
@@ -467,7 +490,30 @@ Item {
             target: props.editor
         }
 
+        // Material 3 Expressive: the details rise in when the selection changes.
+        opacity: 0
+
+        ParallelAnimation {
+            id: mfAppear
+
+            Anim {
+                target: mf
+                property: "opacity"
+                from: 0
+                to: 1
+                type: Anim.DefaultEffects
+            }
+            Anim {
+                target: mf
+                property: "y"
+                from: 16
+                to: 0
+                type: Anim.DefaultSpatial
+            }
+        }
+
         Component.onCompleted: {
+            mfAppear.start();
             if (props.editor.focusName) {
                 props.editor.focusName = false;
                 mName.forceActiveFocus();

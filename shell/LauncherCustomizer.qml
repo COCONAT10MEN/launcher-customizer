@@ -40,9 +40,70 @@ Singleton {
     }
 
     signal editRequested(string appId)
+    signal reorderRequested(string categoryId, var ids)
 
     function requestEdit(appId: string): void {
         root.editRequested(appId);
+    }
+
+    /// The launcher's custom order changed (drag and drop): the plugin saves it.
+    function requestReorder(categoryId: string, ids: var): void {
+        root.reorderRequested(categoryId, ids);
+    }
+
+    // ------------------------------------------------- sections and order
+
+    // "kde:<path>" -> node, every level.
+    readonly property var kdeNodes: {
+        const m = {};
+        const walk = list => {
+            for (const n of list) {
+                m["kde:" + n.path] = n;
+                walk(n.children);
+            }
+        };
+        walk(root.kde?.categories ?? []);
+        return m;
+    }
+
+    /// App ids of a KDE menu in its own order, subcategories flattened in place.
+    function flatOrder(node: var): var {
+        const out = [];
+        for (const it of (node?.items ?? [])) {
+            if (it.kind === "app")
+                out.push(it.id);
+            else if (it.kind === "menu")
+                out.push(...root.flatOrder(root.kdeNodes["kde:" + it.path]));
+        }
+        return out;
+    }
+
+    function orderBy(apps: var, categoryId: string, mode: string, sortFn: var): var {
+        if (mode !== "custom" || !root.pluginActive)
+            return sortFn(apps);
+        const node = root.kdeNodes[categoryId];
+        const list = node ? root.flatOrder(node) : (root.data?.order?.[categoryId] ?? []);
+        const idx = {};
+        list.forEach((id, i) => idx[id] = i);
+        return apps.slice().sort((a, b) => ((idx[a.id] ?? 1e9) - (idx[b.id] ?? 1e9)) || String(a.name).localeCompare(String(b.name)));
+    }
+
+    /// What the launcher grid shows for a category: { top, sections }.
+    /// A KDE category with subcategories keeps its own apps on top and shows
+    /// each subcategory as a section below them.
+    function arrange(categoryId: string, apps: var, all: var, mode: string, sortFn: var): var {
+        const node = root.useKde ? root.kdeNodes[categoryId] : null;
+        const subs = (node?.children ?? []).filter(c => !c.hidden && c.allApps.length > 0);
+        if (!node || subs.length === 0)
+            return { top: root.orderBy(apps, categoryId, mode, sortFn), sections: [] };
+        const byId = {};
+        for (const a of all)
+            byId[a.id] = a;
+        const direct = {};
+        for (const id of node.apps)
+            direct[id] = true;
+        const sections = subs.map(c => Object.assign({ id: "kde:" + c.path, name: c.name, apps: root.orderBy(c.allApps.map(id => byId[id]).filter(Boolean), "kde:" + c.path, mode, sortFn) }, root.kdeIcon(c))).filter(sec => sec.apps.length > 0);
+        return { top: root.orderBy(apps.filter(a => direct[a.id]), categoryId, mode, sortFn), sections: sections };
     }
 
     // ------------------------------------------------------------- icons

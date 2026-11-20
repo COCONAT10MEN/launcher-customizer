@@ -24,7 +24,7 @@ Item {
 
     signal picked(string key)
 
-    readonly property var shown: {
+    readonly property var matches: {
         const q = picker.query.trim().toLowerCase();
         return picker.rows.filter(r => !picker.exclude.includes(r.key) && (!q || r.name.toLowerCase().includes(q)));
     }
@@ -35,30 +35,56 @@ Item {
         picker.exclude = exclude ?? [];
         picker.query = "";
         search.text = "";
-        picker.visible = true;
+        picker.shown = true;
         search.forceActiveFocus();
     }
 
     function close(): void {
-        picker.visible = false;
+        picker.shown = false;
     }
 
-    visible: false
+    property bool shown: false
+
+    visible: picker.shown || scrim.opacity > 0
     z: 100
     anchors.fill: parent
 
     Rectangle {
+        id: scrim
+
         anchors.fill: parent
         color: Qt.alpha(Colours.palette.m3scrim, 0.45)
+        opacity: picker.shown ? 1 : 0
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.DefaultEffects
+            }
+        }
 
         MouseArea {
             anchors.fill: parent
+            enabled: picker.shown
             onClicked: picker.close()
         }
     }
 
     StyledRect {
         anchors.centerIn: parent
+        opacity: picker.shown ? 1 : 0
+        scale: picker.shown ? 1 : 0.92
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.DefaultEffects
+            }
+        }
+
+        Behavior on scale {
+            Anim {
+                type: Anim.DefaultSpatial
+            }
+        }
         width: Math.min(parent.width - 48, 460)
         height: Math.min(parent.height - 48, 560)
         radius: Tokens.rounding.extraLarge
@@ -98,8 +124,8 @@ Item {
                 onTextChanged: picker.query = text
                 Keys.onEscapePressed: picker.close()
                 Keys.onReturnPressed: {
-                    if (picker.shown.length > 0)
-                        picker.picked(picker.shown[0].key);
+                    if (picker.matches.length > 0)
+                        picker.picked(picker.matches[0].key);
                 }
             }
 
@@ -110,7 +136,7 @@ Item {
                 Layout.fillHeight: true
                 clip: true
                 spacing: 2
-                model: picker.shown
+                model: picker.matches
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: StyledScrollBar {
                     flickable: list

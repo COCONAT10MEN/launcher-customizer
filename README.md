@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.0.1-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.1.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -32,6 +32,11 @@ Caelestia.
 - **Every app exactly where you want it.** Move apps between categories, show one app in
   several, drag and drop, select many at once, add separators, set your own order, or
   sort with one click.
+- **Subcategories as sections.** Open a category in the launcher and its subcategories
+  appear inside it as their own titled sections, each just big enough for what it holds,
+  right below the category's own apps. No extra tabs.
+- **Arrange the launcher like your desktop.** Switch the launcher's sort button to
+  *Custom* and drag tiles into any order you like. The order sticks, per category.
 - **Edit the apps themselves.** Change any app's name, description, icon, command,
   arguments, environment variables, work folder or keywords, and choose whether it runs
   in a terminal, as another user, on the dedicated graphics card, or with launch
@@ -39,6 +44,8 @@ Caelestia.
 - **A shortcut for any app.** Click, press the keys, done: it works system-wide.
 - **Your own launchers.** Turn any command or script into a launcher with its own name
   and icon.
+- **Hide anything in one click.** Hover any app or category in the editor and click the
+  eye to take it out of the launcher; click again to bring it back.
 - **Hidden apps, found.** Show the entries apps hide by default, and bring back the ones
   you want.
 - **Safe to experiment.** Every change can be undone, and *Restore to system menu* puts
@@ -50,7 +57,7 @@ Caelestia.
   icon theme if you prefer.
 
 > [!TIP]
-> Right-click any app in the launcher and choose *Move to category…* to jump straight to
+> Right-click any app in the launcher and choose *App info* to jump straight to
 > it in the editor.
 
 ## Installation
@@ -83,7 +90,7 @@ them gone. With the plugin off, the launcher shows Caelestia's stock categories.
 ## Opening the editor
 
 - *Settings -> Plugins -> Launcher Customizer -> ⚙*
-- Right-click an app in the launcher -> *Move to category…*
+- Right-click an app in the launcher -> *App info*
 - From a script or keybind:
 
 ```bash
@@ -96,8 +103,10 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 | --- | --- |
 | Add a launcher, category, subcategory or separator | *New* button or right-click · `Ctrl+N`, `Ctrl+Shift+N` |
 | Move, copy or remove apps | toolbar or right-click · `Ctrl+X` `Ctrl+C` `Ctrl+V` `Del` · drag onto a category |
-| Change the order | arrows or right-click · `Alt+Up` `Alt+Down` · drag within the list |
+| Change the order | arrows or right-click · `Alt+Up` `Alt+Down` · drag within the list · or drag tiles in the launcher with *Custom* sort |
 | Sort a category, or everything | sort button · right-click a category · *⋮* menu |
+| Look inside a category or subcategory | the arrow next to it, in the tree or the list (or double-click it) |
+| Hide or show an app or category | hover it and click the eye · right-click -> *Hide* · *Hidden* switch |
 | See hidden apps | *Show hidden* switch |
 | Find an app | search box (name, description, comment, keywords) |
 | Start over | *⋮ -> Restore to system menu…* |
@@ -136,6 +145,10 @@ implementation of the freedesktop.org menu spec, checked entry for entry against
 own `kbuildsycoca6 --menutest`.
 
 ## Configuring
+
+- **Custom order** (the launcher's sort button) - next to *Most used* and *A-Z*. In a
+  category it follows the category's order (the same one you set in the editor and that
+  KDE uses); *Favorites* and *All Applications* keep their own.
 
 - **Launcher icons** (*⋮* menu) - *Material* shows KDE's categories in Caelestia's style,
   *icon theme* uses your KDE icon theme. Icons you pick yourself always show as-is.

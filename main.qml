@@ -393,9 +393,35 @@ Scope {
             LauncherCustomizer.pluginActive = false;
     }
 
+    /// The launcher's custom order after a drag: KDE categories keep it in
+    /// their own KDE order, Favorites and All Applications in our config.
+    function saveOrder(categoryId: string, ids: var): void {
+        if (categoryId.startsWith("kde:")) {
+            const node = LauncherCustomizer.kdeNodes[categoryId];
+            if (!node)
+                return;
+            const items = node.items;
+            const direct = items.filter(it => it.kind === "app").map(it => it.id);
+            const wanted = ids.filter(id => direct.includes(id));
+            const seq = wanted.concat(direct.filter(id => !wanted.includes(id)));
+            let k = 0;
+            const tokens = items.map(it => it.kind === "sep" ? "sep" : (it.kind === "menu" ? "menu:" + it.path.split("/").pop() : "app:" + seq[k++]));
+            root.setLayout(categoryId.slice(4), tokens);
+        } else {
+            root.update(d => {
+                d.order = d.order && typeof d.order === "object" ? d.order : {};
+                d.order[categoryId] = ids;
+            });
+        }
+    }
+
     Connections {
         function onEditRequested(appId: string): void {
             root.openEditor(appId);
+        }
+
+        function onReorderRequested(categoryId: string, ids: var): void {
+            root.saveOrder(categoryId, ids);
         }
 
         target: root.shellReady ? LauncherCustomizer : null
