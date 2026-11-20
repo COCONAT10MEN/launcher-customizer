@@ -1,0 +1,36 @@
+{
+  "id": "launcher-customizer",
+  "name": "Launcher Customizer",
+  "description": "Organise the app launcher: rename, hide, reorder and add your own categories, move any app into any category (right-click → Move to category…), and open the launcher from the bottom, top, left, right or right next to the dock.",
+  "icon": "icon.svg",
+  "version": "1.0.0",
+  "type": "quickshell",
+  "ui": "main.qml",
+  "author": {
+    "name": "COCONAT10MEN",
+    "url": "https://github.com/COCONAT10MEN"
+  },
+  "license": "MIT",
+  "keywords": [
+    "launcher",
+    "categories",
+    "app drawer",
+    "placement",
+    "dock"
+  ],
+  "settings": [
+    {
+      "id": "placement",
+      "label": "Launcher opens from",
+      "type": "enum",
+      "options": [
+        "Bottom",
+        "Top",
+        "Left",
+        "Right",
+        "Follow dock"
+      ],
+      "default": "Bottom"
+    }
+  ]
+}
