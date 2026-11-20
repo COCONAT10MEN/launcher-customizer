@@ -1,9 +1,9 @@
 {
   "id": "launcher-customizer",
   "name": "Launcher Customizer",
-  "description": "Organise the app launcher, synced both ways with the KDE application menu: rename, re-icon (Material Symbols, icon theme or your own SVG/PNG), hide, reorder and create categories, and move apps between them. Plus an experimental option to open the launcher from the top, sides or next to the dock.",
+  "description": "Organise the app launcher, synced both ways with the KDE application menu: rename, re-icon (Material Symbols, icon theme or your own SVG/PNG), hide, reorder and create categories, and move apps between them.",
   "icon": "icon.svg",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "quickshell",
   "ui": "main.qml",
   "author": {
@@ -15,22 +15,7 @@
     "launcher",
     "categories",
     "app drawer",
-    "placement",
-    "dock"
-  ],
-  "settings": [
-    {
-      "id": "placement",
-      "label": "Launcher position (experimental)",
-      "type": "enum",
-      "options": [
-        "Bottom",
-        "Top",
-        "Left",
-        "Right",
-        "Follow dock"
-      ],
-      "default": "Bottom"
-    }
+    "kde",
+    "menu"
   ]
 }

@@ -27,8 +27,6 @@ Singleton {
     // The KDE menu as kdemenu.py reports it. Set by the plugin.
     property var kde: ({})
 
-    readonly property var validPlacements: ["bottom", "top", "left", "right", "dock"]
-    readonly property string placement: root.pluginActive && root.validPlacements.includes(root.data?.placement) ? root.data.placement : "bottom"
     readonly property string source: root.data?.source === "caelestia" ? "caelestia" : "kde"
     readonly property bool useKde: root.pluginActive && root.source === "kde" && root.kde?.ok === true
     readonly property string iconStyle: root.data?.iconStyle === "theme" ? "theme" : "material"
@@ -51,14 +49,6 @@ Singleton {
 
     function requestEdit(appId: string): void {
         root.editRequested(appId);
-    }
-
-    /// The screen edge the launcher opens from. "dock" uses the bar's edge,
-    /// since the dock lives in the bar.
-    function edgeFor(barPosition: string): string {
-        if (root.placement === "dock")
-            return ["top", "bottom", "left", "right"].includes(barPosition) ? barPosition : "bottom";
-        return root.placement;
     }
 
     // ------------------------------------------------------------- icons

@@ -1,5 +1,4 @@
 import QtQuick
-import QtCore
 import Quickshell
 import Quickshell.Io
 import Caelestia
@@ -7,9 +6,8 @@ import qs.services
 import qs.modules.launcher.services
 import "."
 
-// Launcher Customizer: organise launcher categories (synced both ways with
-// the KDE application menu by default) and, experimentally, choose where the
-// launcher opens. The shell side lives in
+// Launcher Customizer: organise launcher categories, synced both ways with
+// the KDE application menu by default. The shell side lives in
 // modules/launcher/services/LauncherCustomizer.qml, which patch.py installs
 // (and re-installs after Caelestia updates).
 Scope {
@@ -26,16 +24,6 @@ Scope {
     // before patch.py has added the shell side; the shell restarts right after.
     readonly property bool shellReady: typeof LauncherCustomizer !== "undefined"
 
-    // Nexus → Plugins shows these labels; the shell wants the keys.
-    readonly property var placementKeys: ({ "Bottom": "bottom", "Top": "top", "Left": "left", "Right": "right", "Follow dock": "dock" })
-    readonly property var placementLabels: ["Bottom", "Top", "Left", "Right", "Follow dock"]
-
-    function placementLabel(key: string): string {
-        for (const label of root.placementLabels)
-            if (root.placementKeys[label] === key)
-                return label;
-        return "Bottom";
-    }
 
     // ===================================================== config file (JSON)
 
@@ -56,13 +44,6 @@ Scope {
         root.write(next);
     }
 
-    function setPlacement(key: string): void {
-        settings.placement = root.placementLabel(key);
-        // Flush now: the shell is restarted with SIGTERM, which skips the
-        // automatic save, and the next start would restore the old value.
-        settings.sync();
-        root.update(d => d.placement = key);
-    }
 
     function setSource(src: string): void {
         root.update(d => d.source = src);
@@ -126,7 +107,6 @@ Scope {
         const h = root.history.slice();
         const prev = JSON.parse(h.pop());
         root.history = h;
-        prev.placement = root.current().placement;
         prev.source = root.current().source;
         root.write(prev);
     }
@@ -157,7 +137,7 @@ Scope {
     function resetCaelestia(): void {
         root.snapshotJson();
         const cur = root.current();
-        root.write({ placement: cur.placement ?? "bottom", source: cur.source ?? "kde", iconStyle: cur.iconStyle });
+        root.write({ source: cur.source ?? "kde", iconStyle: cur.iconStyle });
     }
 
     // ===================================================== KDE menu bridge
@@ -385,13 +365,6 @@ Scope {
 
     // ========================================================== wiring
 
-    Settings {
-        id: settings
-
-        property string placement: "Bottom"
-
-        category: "Plugin_launcher-customizer"
-    }
 
     FileView {
         id: dataFile
@@ -405,14 +378,13 @@ Scope {
         iconFile.setText(root.iconSvg);
         if (!root.shellReady)
             return;
-        // Mirror the Nexus placement setting into the config file the shell reads.
+        // Older versions stored a launcher placement; drop it.
         let cur = {};
         try {
             cur = JSON.parse(dataFile.text() || "{}") || {};
         } catch (e) {}
-        const key = root.placementKeys[settings.placement] ?? "bottom";
-        if (cur.placement !== key) {
-            cur.placement = key;
+        if (cur.placement !== undefined) {
+            delete cur.placement;
             root.write(cur);
         }
         LauncherCustomizer.pluginActive = true;
@@ -443,11 +415,6 @@ Scope {
             root.openEditor(appId);
         }
 
-        /// bottom | top | left | right | dock  (experimental)
-        function setPlacement(key: string): void {
-            if (LauncherCustomizer.validPlacements.includes(key))
-                root.setPlacement(key);
-        }
 
         function sync(): void {
             root.refreshKde();

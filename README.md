@@ -2,8 +2,7 @@
 
 A [Caelestia](https://github.com/caelestia-kde) plugin that puts you in charge
 of the app launcher's categories — **synced both ways with the KDE application
-menu** — plus an experimental option to open the launcher from other screen
-edges.
+menu**.
 
 ## Open it
 
@@ -64,18 +63,6 @@ Caelestia** in the editor; those edits are stored in
 - Shortcuts: `Ctrl+F` search, `Ctrl+Z` undo, `Ctrl+N` new category, `Esc` close.
 - Button to open KDE's own Menu Editor.
 
-## Launcher position (experimental)
-
-| Option | What it does |
-| --- | --- |
-| Bottom | Stock behaviour. |
-| Top / Left / Right | Opens from that edge. If your bar is on that edge, the launcher grows out of the bar. |
-| Follow dock | Opens out of the bar, lined up with your dock, like a Start menu. |
-
-**Experimental:** anything but Bottom may look off with some bar or island
-setups, hover/drag-to-open only work at Bottom, and the profile picture is
-hidden at Top. Set it in the editor's footer or in Nexus.
-
 ## Install
 
 Nexus → Plugins → install from URL:
@@ -92,8 +79,8 @@ into the shell and restarts it once.
 
 Caelestia's plugin API has no hooks for the launcher, so on every shell start
 `patch.py` adds `modules/launcher/services/LauncherCustomizer.qml` and replaces
-a few exact snippets (launcher, drawers, launcher category button, Nexus
-plugins page). Each change is wrapped in `// launcher-customizer:begin … :end`
+a few exact snippets (launcher categories, launcher category button and app
+menu, Nexus plugins page). Each change is wrapped in `// launcher-customizer:begin … :end`
 markers holding the original text, so a revert is byte-for-byte.
 
 - Already patched → nothing happens.

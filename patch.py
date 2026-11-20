@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Launcher Customizer patcher for the Caelestia shell.
 
-Caelestia's plugin API has no hooks for launcher categories or launcher
-placement, so this script wires the plugin into the shell:
+Caelestia's plugin API has no hooks for launcher categories, so this script
+wires the plugin into the shell:
 
 * copies shell/LauncherCustomizer.qml into modules/launcher/services/
 * replaces a few exact snippets in the launcher and drawers files
@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "5"
+VERSION = "6"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -119,125 +119,6 @@ OPS = [
         "        Controls.MenuItem {\n"
         '            text: qsTr("App info")\n',
     ),
-    # ----------------------------------------------------------------- placement
-    (
-        "modules/launcher/Wrapper.qml",
-        "    property real avatarOpenScale: shouldBeActive ? 1 : 0\n",
-        "    // At the top edge there is no room above the card for the profile picture.\n"
-        '    property real avatarOpenScale: shouldBeActive && lcEdge !== "top" ? 1 : 0\n',
-    ),
-    (
-        "modules/launcher/Wrapper.qml",
-        "    readonly property bool avatarVisible: root.visible && (content.item?.showAvatar ?? false)\n",
-        '    readonly property bool avatarVisible: root.visible && (content.item?.showAvatar ?? false) && root.lcEdge !== "top"\n',
-    ),
-    (
-        "modules/launcher/Wrapper.qml",
-        '    clip: Config.bar.position === "bottom" && !root.avatarVisible\n'
-        "    visible: offsetScale < 1\n"
-        '    anchors.bottomMargin: (Config.bar.position === "bottom" ? 0 : -implicitHeight - 5) * offsetScale\n'
-        '    height: Config.bar.position === "bottom" ? implicitHeight * (1 - offsetScale) : implicitHeight\n',
-        "    // The edge the launcher opens from. When the bar is on that edge the\n"
-        "    // launcher grows out of it; otherwise it slides in from off-screen.\n"
-        "    readonly property string lcPlacement: LauncherCustomizer.placement\n"
-        "    readonly property string lcEdge: LauncherCustomizer.edgeFor(Config.bar.position)\n"
-        "    readonly property bool lcAttached: Config.bar.position === lcEdge\n"
-        '    readonly property bool lcVertical: lcEdge === "left" || lcEdge === "right"\n'
-        "    // How far it is pushed off-screen while sliding (when not attached).\n"
-        "    readonly property real lcSlide: lcAttached ? 0 : ((lcVertical ? implicitWidth : implicitHeight) + 5) * offsetScale\n"
-        "    clip: lcAttached && !root.avatarVisible\n"
-        "    visible: offsetScale < 1\n"
-        "    height: !lcVertical && lcAttached ? implicitHeight * (1 - offsetScale) : implicitHeight\n"
-        "    width: lcVertical && lcAttached ? implicitWidth * (1 - offsetScale) : implicitWidth\n",
-    ),
-    (
-        "modules/launcher/Wrapper.qml",
-        "        anchors.top: parent.top\n"
-        "        anchors.horizontalCenter: parent.horizontalCenter\n",
-        "        // Pinned to the side away from the edge, so it slides out of it.\n"
-        '        anchors.top: root.lcEdge === "top" ? undefined : parent.top\n'
-        '        anchors.bottom: root.lcEdge === "top" ? parent.bottom : undefined\n'
-        "        anchors.horizontalCenter: root.lcVertical ? undefined : parent.horizontalCenter\n"
-        '        anchors.right: root.lcEdge === "left" ? parent.right : undefined\n'
-        '        anchors.left: root.lcEdge === "right" ? parent.left : undefined\n',
-    ),
-    (
-        "modules/drawers/Panels.qml",
-        '        property string vAnchor: "bottom"\n'
-        '        property string hAnchor: "center"\n'
-        "\n"
-        "        screen: root.screen\n"
-        "        visibilities: root.visibilities\n"
-        "        panels: root\n"
-        "        anchors.horizontalCenter: parent.horizontalCenter\n"
-        "        anchors.bottom: parent.bottom\n",
-        '        property string vAnchor: lcEdge === "top" ? "top" : (lcEdge === "bottom" ? "bottom" : "center")\n'
-        '        property string hAnchor: lcEdge === "left" ? "left" : (lcEdge === "right" ? "right" : "center")\n'
-        "        // \"Follow dock\": shift the launcher along its edge so it is centred on\n"
-        "        // the dock, while keeping it fully on screen.\n"
-        "        readonly property real lcAlongOffset: {\n"
-        '            if (lcPlacement !== "dock")\n'
-        "                return 0;\n"
-        '            const dock = Visibilities.docks.get(root.screen?.name ?? "");\n'
-        "            if (!dock || !dock.visible || dock.width <= 0 || dock.height <= 0)\n"
-        "                return 0;\n"
-        "            // Re-run when the dock, the window or the launcher moves or opens.\n"
-        "            void (dock.x + dock.y + dock.width + dock.height + root.width + root.height + width + height + (shouldBeActive ? 1 : 0));\n"
-        "            const p = dock.mapToItem(root, dock.width / 2, dock.height / 2);\n"
-        "            const along = lcVertical ? p.y - root.height / 2 : p.x - root.width / 2;\n"
-        "            const room = Math.max(0, ((lcVertical ? root.height - height : root.width - width)) / 2);\n"
-        "            // Leave space above the card for the profile picture's overhang.\n"
-        "            const lead = lcVertical && avatarVisible ? Math.min(room * 2, avatarSize / 2 + 4) : 0;\n"
-        "            return Math.max(-room + lead, Math.min(room, along));\n"
-        "        }\n"
-        "\n"
-        "        screen: root.screen\n"
-        "        visibilities: root.visibilities\n"
-        "        panels: root\n"
-        "        // Positioned explicitly (no anchors) so it can sit on any edge.\n"
-        '        x: lcEdge === "left" ? -lcSlide : (lcEdge === "right" ? parent.width - width + lcSlide : (parent.width - width) / 2 + lcAlongOffset)\n'
-        '        y: lcEdge === "top" ? -lcSlide : (lcEdge === "bottom" ? parent.height - height + lcSlide : (parent.height - height) / 2 + lcAlongOffset)\n',
-    ),
-    (
-        "modules/drawers/Regions.qml",
-        "        panel: root.panels.launcher\n"
-        "        y: root.win.height - height\n"
-        "        height: root.Config.launcher.enabled ? panel.height * (1 - root.panels.launcher.offsetScale) + root.edgeExtent(root.Config.launcher.hoverThickness) + (panel.height * (1 - root.panels.launcher.offsetScale) > 0 ? root.panels.bottomMargin : 0) : 0\n",
-        "        panel: root.panels.launcher\n"
-        "        // Off the bottom edge the launcher's input area is simply its own rect.\n"
-        '        y: root.panels.launcher.lcEdge === "bottom" ? root.win.height - height : panel.y + root.panels.topMargin\n'
-        '        height: root.panels.launcher.lcEdge !== "bottom" ? (root.Config.launcher.enabled && panel.visible ? panel.height : 0) : (root.Config.launcher.enabled ? panel.height * (1 - root.panels.launcher.offsetScale) + root.edgeExtent(root.Config.launcher.hoverThickness) + (panel.height * (1 - root.panels.launcher.offsetScale) > 0 ? root.panels.bottomMargin : 0) : 0)\n',
-    ),
-    (
-        "modules/drawers/Interactions.qml",
-        "    function inLauncherAvatar(x: real, y: real): bool {\n",
-        "    // Hit test for a launcher that is not on the bottom edge.\n"
-        "    function lcInLauncher(x: real, y: real): bool {\n"
-        "        const l = panels.launcher;\n"
-        "        const lx = panels.leftMargin + l.x;\n"
-        "        const ly = panels.topMargin + l.y;\n"
-        "        const pad = Surface.panelRounding;\n"
-        "        return l.visible && x >= lx - pad && x <= lx + l.width + pad && y >= ly - pad && y <= ly + l.height + pad;\n"
-        "    }\n"
-        "    function inLauncherAvatar(x: real, y: real): bool {\n",
-    ),
-    (
-        "modules/drawers/Interactions.qml",
-        "            else if (visibilities.launcher && ((inBottomPanel(panels.launcher, event.x, event.y, false, Config.launcher.hoverThickness, Config.launcher.hoverWidth) && withinPanelWidth(panels.launcher, event.x, event.y)) || inLauncherAvatar(event.x, event.y))) inside = true;\n",
-        '            else if (visibilities.launcher && ((panels.launcher.lcEdge === "bottom" ? (inBottomPanel(panels.launcher, event.x, event.y, false, Config.launcher.hoverThickness, Config.launcher.hoverWidth) && withinPanelWidth(panels.launcher, event.x, event.y)) : lcInLauncher(event.x, event.y)) || inLauncherAvatar(event.x, event.y))) inside = true;\n',
-    ),
-    (
-        "modules/drawers/Interactions.qml",
-        "            if (!visibilities.launcher && inBottomPanel(panels.launcher, x, y, false, Config.launcher.hoverThickness, Config.launcher.hoverWidth))\n",
-        "            // Hover-to-open only applies while the launcher is on the bottom edge.\n"
-        '            if (!visibilities.launcher && panels.launcher.lcEdge === "bottom" && inBottomPanel(panels.launcher, x, y, false, Config.launcher.hoverThickness, Config.launcher.hoverWidth))\n',
-    ),
-    (
-        "modules/drawers/Interactions.qml",
-        "        } else if (Config.launcher.enabled && pressed && inBottomPanel(panels.launcher, dragStart.x, dragStart.y, false, Config.launcher.hoverThickness, Config.launcher.hoverWidth) && withinPanelWidth(panels.launcher, x, y)) {\n",
-        "        // Drag-to-open also only applies on the bottom edge.\n"
-        '        } else if (Config.launcher.enabled && pressed && panels.launcher.lcEdge === "bottom" && inBottomPanel(panels.launcher, dragStart.x, dragStart.y, false, Config.launcher.hoverThickness, Config.launcher.hoverWidth) && withinPanelWidth(panels.launcher, x, y)) {\n',
-    ),
     (
         "modules/launcher/services/Categories.qml",
         "    function visibleCategories(all: list<var>): list<var> {\n",
@@ -286,7 +167,8 @@ OPS = [
         "modules/nexus/pages/PluginsPage.qml",
         "                                visible: userDelegate.settingsCount > 0\n"
         "                                onClicked: {\n",
-        "                                visible: userDelegate.settingsCount > 0\n"
+        "                                // Launcher Customizer has no Nexus settings, but a full editor behind this button.\n"
+        '                                visible: userDelegate.settingsCount > 0 || ((userDelegate.id || userDelegate.name) === "launcher-customizer" && LauncherCustomizer.pluginActive)\n'
         "                                onClicked: {\n"
         "                                    // Launcher Customizer has a full editor instead of the settings popup.\n"
         '                                    if ((userDelegate.id || userDelegate.name) === "launcher-customizer" && LauncherCustomizer.pluginActive) {\n'
@@ -328,9 +210,19 @@ def write_atomic(path: str, text: str) -> None:
         raise
 
 
+# Files older versions patched and this one no longer does: always cleaned
+# (blocks stripped back to stock), so upgrading leaves nothing behind.
+RETIRED_FILES = [
+    "modules/launcher/Wrapper.qml",
+    "modules/drawers/Panels.qml",
+    "modules/drawers/Regions.qml",
+    "modules/drawers/Interactions.qml",
+]
+
+
 def plan(shell: str):
     """Current, stock and patched text of every touched file."""
-    files = sorted({op[0] for op in OPS})
+    files = sorted({op[0] for op in OPS} | {f for f in RETIRED_FILES if os.path.exists(os.path.join(shell, f))})
     current = {}
     for rel in files:
         text = read(os.path.join(shell, rel))
