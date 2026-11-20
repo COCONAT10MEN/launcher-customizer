@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "3"
+VERSION = "5"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -51,7 +51,7 @@ OPS = [
         "modules/launcher/services/Categories.qml",
         '    /// The curated category a desktop entry belongs to, or "other".\n'
         "    function categoryForApp(app): string {\n",
-        "    readonly property var definitions: LauncherCustomizer.merge(root.lcBaseDefinitions)\n"
+        "    readonly property var definitions: LauncherCustomizer.definitionsFor(root.lcBaseDefinitions)\n"
         "\n"
         '    /// The curated category a desktop entry belongs to, or "other".\n'
         "    function categoryForApp(app): string {\n"
@@ -59,7 +59,10 @@ OPS = [
         '        const lcId = String(app?.id ?? "");\n'
         "        const lcPick = lcId.length > 0 ? LauncherCustomizer.assignments[lcId] : undefined;\n"
         "        if (lcPick && root.definitions.some(d => d.id === lcPick))\n"
-        "            return lcPick;\n",
+        "            return lcPick;\n"
+        "        // Synced with KDE: the first KDE category the app is listed in.\n"
+        "        if (LauncherCustomizer.useKde && lcId.length > 0)\n"
+        "            return LauncherCustomizer.kdeFirst(root.definitions, lcId);\n",
     ),
     (
         "modules/launcher/AppBrowserGrid.qml",
@@ -72,6 +75,10 @@ OPS = [
         "        }\n"
         "\n"
         "        function onPluginActiveChanged(): void {\n"
+        "            Qt.callLater(root.lcRefresh);\n"
+        "        }\n"
+        "\n"
+        "        function onKdeChanged(): void {\n"
         "            Qt.callLater(root.lcRefresh);\n"
         "        }\n"
         "\n"
@@ -230,6 +237,62 @@ OPS = [
         "        } else if (Config.launcher.enabled && pressed && inBottomPanel(panels.launcher, dragStart.x, dragStart.y, false, Config.launcher.hoverThickness, Config.launcher.hoverWidth) && withinPanelWidth(panels.launcher, x, y)) {\n",
         "        // Drag-to-open also only applies on the bottom edge.\n"
         '        } else if (Config.launcher.enabled && pressed && panels.launcher.lcEdge === "bottom" && inBottomPanel(panels.launcher, dragStart.x, dragStart.y, false, Config.launcher.hoverThickness, Config.launcher.hoverWidth) && withinPanelWidth(panels.launcher, x, y)) {\n',
+    ),
+    (
+        "modules/launcher/services/Categories.qml",
+        "    function visibleCategories(all: list<var>): list<var> {\n",
+        "    function visibleCategories(all: list<var>): list<var> {\n"
+        "        // KDE categories can share apps, so test membership, not first match.\n"
+        "        if (LauncherCustomizer.useKde)\n"
+        '            return root.definitions.filter(d => d.id === "favorites" || d.id === "all" || all.some(a => LauncherCustomizer.kdeHas(d.id, a.id)));\n',
+    ),
+    (
+        "modules/launcher/services/Categories.qml",
+        "    function appsFor(categoryId: string, all: list<var>): list<var> {\n",
+        "    function appsFor(categoryId: string, all: list<var>): list<var> {\n"
+        '        if (LauncherCustomizer.useKde && categoryId.startsWith("kde:"))\n'
+        "            return all.filter(a => LauncherCustomizer.kdeHas(categoryId, a.id));\n",
+    ),
+    (
+        "modules/launcher/items/CategoryButton.qml",
+        "import qs.services\n",
+        "import qs.services\nimport Quickshell.Widgets\n",
+    ),
+    (
+        "modules/launcher/items/CategoryButton.qml",
+        "        MaterialIcon {\n"
+        "            anchors.verticalCenter: parent.verticalCenter\n"
+        '            text: catRoot.modelData?.icon ?? "apps"\n',
+        "        // Categories can also use an icon-theme icon or an image file.\n"
+        "        IconImage {\n"
+        "            anchors.verticalCenter: parent.verticalCenter\n"
+        '            visible: !(catRoot.modelData?.icon) && !!(catRoot.modelData?.iconSource)\n'
+        "            implicitSize: visible ? 22 : 0\n"
+        '            source: catRoot.modelData?.iconSource ?? ""\n'
+        "            asynchronous: true\n"
+        "        }\n"
+        "\n"
+        "        MaterialIcon {\n"
+        "            anchors.verticalCenter: parent.verticalCenter\n"
+        '            visible: !!(catRoot.modelData?.icon) || !(catRoot.modelData?.iconSource)\n'
+        '            text: catRoot.modelData?.icon || "apps"\n',
+    ),
+    (
+        "modules/nexus/pages/PluginsPage.qml",
+        "import qs.modules.nexus.common\n",
+        "import qs.modules.nexus.common\nimport qs.modules.launcher.services\n",
+    ),
+    (
+        "modules/nexus/pages/PluginsPage.qml",
+        "                                visible: userDelegate.settingsCount > 0\n"
+        "                                onClicked: {\n",
+        "                                visible: userDelegate.settingsCount > 0\n"
+        "                                onClicked: {\n"
+        "                                    // Launcher Customizer has a full editor instead of the settings popup.\n"
+        '                                    if ((userDelegate.id || userDelegate.name) === "launcher-customizer" && LauncherCustomizer.pluginActive) {\n'
+        '                                        LauncherCustomizer.requestEdit("");\n'
+        "                                        return;\n"
+        "                                    }\n",
     ),
 ]
 

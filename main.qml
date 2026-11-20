@@ -7,16 +7,26 @@ import qs.services
 import qs.modules.launcher.services
 import "."
 
-// Launcher Customizer: edit launcher categories and choose where the launcher
-// opens. The shell side lives in modules/launcher/services/LauncherCustomizer.qml,
-// which patch.py installs (and re-installs after Caelestia updates).
+// Launcher Customizer: organise launcher categories (synced both ways with
+// the KDE application menu by default) and, experimentally, choose where the
+// launcher opens. The shell side lives in
+// modules/launcher/services/LauncherCustomizer.qml, which patch.py installs
+// (and re-installs after Caelestia updates).
 Scope {
     id: root
 
     readonly property string pluginDir: decodeURIComponent(Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")).replace(/\/$/, "")
-    readonly property string dataPath: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/caelestia/launcher-customizer.json"
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string dataHome: Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share")
+    readonly property string dataPath: root.configHome + "/caelestia/launcher-customizer.json"
+    readonly property string kdeMenuFile: root.configHome + "/menus/applications-kmenuedit.menu"
+    readonly property string iconDir: root.dataHome + "/caelestia/category-icons"
 
-    // Nexus → Plugins → settings shows these labels; the shell wants the keys.
+    // False only on the first start after install or a Caelestia update,
+    // before patch.py has added the shell side; the shell restarts right after.
+    readonly property bool shellReady: typeof LauncherCustomizer !== "undefined"
+
+    // Nexus → Plugins shows these labels; the shell wants the keys.
     readonly property var placementKeys: ({ "Bottom": "bottom", "Top": "top", "Left": "left", "Right": "right", "Follow dock": "dock" })
     readonly property var placementLabels: ["Bottom", "Top", "Left", "Right", "Follow dock"]
 
@@ -27,18 +37,46 @@ Scope {
         return "Bottom";
     }
 
-    // ------------------------------------------------------------ data model
-
-    // False only on the first start after install or a Caelestia update,
-    // before patch.py has added the shell side; the shell restarts right after.
-    readonly property bool shellReady: typeof LauncherCustomizer !== "undefined"
+    // ===================================================== config file (JSON)
 
     function current(): var {
-        const d = LauncherCustomizer.data;
+        const d = root.shellReady ? LauncherCustomizer.data : null;
         return d && typeof d === "object" ? d : ({});
     }
 
-    /// Every category with the user's edits, hidden ones included.
+    function write(next: var): void {
+        next.version = 1;
+        LauncherCustomizer.data = next;
+        dataFile.setText(JSON.stringify(next, null, 2) + "\n");
+    }
+
+    function update(mutator: var): void {
+        const next = JSON.parse(JSON.stringify(root.current()));
+        mutator(next);
+        root.write(next);
+    }
+
+    function setPlacement(key: string): void {
+        settings.placement = root.placementLabel(key);
+        // Flush now: the shell is restarted with SIGTERM, which skips the
+        // automatic save, and the next start would restore the old value.
+        settings.sync();
+        root.update(d => d.placement = key);
+    }
+
+    function setSource(src: string): void {
+        root.update(d => d.source = src);
+        if (src === "kde")
+            root.refreshKde();
+    }
+
+    function setIconStyle(style: string): void {
+        root.update(d => d.iconStyle = style);
+    }
+
+    // ============================================= Caelestia-mode categories
+
+    /// Every built-in/custom category with the user's edits, hidden ones included.
     function fullList(): var {
         const base = Categories.lcBaseDefinitions ?? [];
         const user = Array.isArray(root.current().categories) ? root.current().categories : [];
@@ -73,25 +111,35 @@ Scope {
         return out;
     }
 
-    function write(next: var): void {
-        next.version = 1;
-        LauncherCustomizer.data = next;
-        dataFile.setText(JSON.stringify(next, null, 2) + "\n");
+    // Undo for Caelestia mode: snapshots of the config file.
+    property var history: []
+
+    function snapshotJson(): void {
+        const h = root.history.slice(-39);
+        h.push(JSON.stringify(root.current()));
+        root.history = h;
     }
 
-    function update(mutator: var): void {
-        const next = JSON.parse(JSON.stringify(root.current()));
-        mutator(next);
-        root.write(next);
+    function undoJson(): void {
+        if (root.history.length === 0)
+            return;
+        const h = root.history.slice();
+        const prev = JSON.parse(h.pop());
+        root.history = h;
+        prev.placement = root.current().placement;
+        prev.source = root.current().source;
+        root.write(prev);
     }
 
     function saveCategories(list: var): void {
+        root.snapshotJson();
         root.update(d => {
             d.categories = list.map(c => ({ id: c.id, name: c.name, icon: c.icon, xdg: c.xdg ?? [], hidden: !!c.hidden, custom: !!c.custom }));
         });
     }
 
     function assign(appId: string, categoryId: string): void {
+        root.snapshotJson();
         root.update(d => {
             d.assignments = d.assignments && typeof d.assignments === "object" ? d.assignments : {};
             d.assignments[appId] = categoryId;
@@ -99,23 +147,220 @@ Scope {
     }
 
     function unassign(appId: string): void {
+        root.snapshotJson();
         root.update(d => {
             if (d.assignments)
                 delete d.assignments[appId];
         });
     }
 
-    function setPlacement(key: string): void {
-        settings.placement = root.placementLabel(key);
-        // Flush now: the shell is restarted with SIGTERM, which skips the
-        // automatic save, and the next start would restore the old value.
-        settings.sync();
-        root.update(d => d.placement = key);
+    function resetCaelestia(): void {
+        root.snapshotJson();
+        const cur = root.current();
+        root.write({ placement: cur.placement ?? "bottom", source: cur.source ?? "kde", iconStyle: cur.iconStyle });
     }
 
-    function resetAll(): void {
-        root.write({ placement: root.placementKeys[settings.placement] ?? "bottom" });
+    // ===================================================== KDE menu bridge
+
+    property bool kdeBusy: false
+    property string kdeError: ""
+    property var kdeQueue: []
+    property double kdeUpdated: 0
+    property var themeIcons: []
+    property bool themeIconsLoading: false
+
+    signal kdeChanged(var result)
+
+    /// Run kdemenu.py; commands are queued so edits never race.
+    function kdeRun(args: var, done: var): void {
+        const q = root.kdeQueue.slice();
+        q.push({ args: args, done: done });
+        root.kdeQueue = q;
+        root.kdeNext();
     }
+
+    function kdeNext(): void {
+        if (kdeProc.running || root.kdeQueue.length === 0)
+            return;
+        const q = root.kdeQueue.slice();
+        const job = q.shift();
+        root.kdeQueue = q;
+        kdeProc.job = job;
+        root.kdeBusy = true;
+        kdeProc.command = ["python3", "-I", root.pluginDir + "/kdemenu.py"].concat(job.args);
+        kdeProc.running = true;
+    }
+
+    function kdeResult(text: string): void {
+        const job = kdeProc.job;
+        let res = null;
+        try {
+            res = JSON.parse(text);
+        } catch (e) {
+            res = { ok: false, error: "kdemenu.py: " + (text || "no output").slice(0, 200) };
+        }
+        if (res.ok && res.categories) {
+            LauncherCustomizer.kde = res;
+            root.kdeUpdated = Date.now();
+            root.kdeError = "";
+            root.kdeChanged(res);
+        } else if (!res.ok) {
+            root.kdeError = res.error ?? "unknown error";
+            console.warn("[launcher-customizer] " + root.kdeError);
+            if (job?.args?.[0] !== "dump")
+                Toaster.toast(qsTr("Launcher Customizer"), qsTr("KDE menu change failed: %1").arg(root.kdeError), "warning");
+        }
+        if (job?.done)
+            job.done(res);
+        root.kdeBusy = root.kdeQueue.length > 0;
+        root.kdeNext();
+    }
+
+    function refreshKde(): void {
+        if (!root.shellReady)
+            return;
+        // One pending refresh is enough.
+        if (root.kdeQueue.some(j => j.args[0] === "dump"))
+            return;
+        root.kdeRun(["dump"], null);
+    }
+
+    function kdeMove(appId: string, toPath: string, fromPaths: var): void {
+        root.kdeRun(["move", appId, toPath].concat(fromPaths ?? []), null);
+    }
+
+    function kdeAdd(appId: string, toPath: string): void {
+        root.kdeRun(["add", appId, toPath], null);
+    }
+
+    function kdeRemove(appId: string, fromPath: string): void {
+        root.kdeRun(["remove", appId, fromPath], null);
+    }
+
+    function kdeResetApp(appId: string): void {
+        root.kdeRun(["reset-app", appId], null);
+    }
+
+    function kdeSet(path: string, kv: var): void {
+        const args = ["set", path];
+        for (const k of Object.keys(kv))
+            args.push(k + "=" + kv[k]);
+        root.kdeRun(args, null);
+    }
+
+    function kdeResetDir(path: string): void {
+        root.kdeRun(["reset-dir", path], null);
+    }
+
+    function kdeNew(name: string, icon: string, done: var): void {
+        root.kdeRun(["new", name, icon ?? ""], res => {
+            if (done && res?.ok)
+                done(res.created);
+        });
+    }
+
+    function kdeDelete(path: string): void {
+        root.kdeRun(["delete", path], null);
+    }
+
+    function kdeOrder(paths: var): void {
+        root.kdeRun(["order"].concat(paths), null);
+    }
+
+    function kdeUndo(): void {
+        root.kdeRun(["undo"], null);
+    }
+
+    /// Icon choice from the picker: { kind: "material"|"theme"|"file"|"default", value }.
+    function kdeSetIcon(path: string, choice: var): void {
+        if (choice.kind === "default") {
+            root.kdeSet(path, { "caelestia-icon": "" });
+            root.kdeRun(["reset-dir", path], null);
+            return;
+        }
+        if (choice.kind === "material") {
+            // KDE gets the same glyph as a colour-scheme aware SVG.
+            const out = root.iconDir + "/" + choice.value + ".svg";
+            root.kdeRun(["material-svg", choice.value, out], res => {
+                const kv = { "caelestia-icon": choice.value };
+                if (res?.ok)
+                    kv.icon = res.path;
+                root.kdeSet(path, kv);
+            });
+            return;
+        }
+        root.kdeSet(path, { icon: choice.value, "caelestia-icon": "" });
+    }
+
+    function loadThemeIcons(): void {
+        if (root.themeIcons.length > 0 || root.themeIconsLoading)
+            return;
+        root.themeIconsLoading = true;
+        root.kdeRun(["icons"], res => {
+            root.themeIconsLoading = false;
+            if (res?.ok)
+                root.themeIcons = res.icons.map(i => i.name);
+        });
+    }
+
+    function openKMenuEdit(): void {
+        Quickshell.execDetached(["kmenuedit"]);
+    }
+
+    Process {
+        id: kdeProc
+
+        property var job: null
+
+        stdout: StdioCollector {
+            onStreamFinished: root.kdeResult(text)
+        }
+    }
+
+    // Live sync: KDE Menu Editor saves, installed/removed apps, opening the
+    // launcher, and (while the editor is open) a light poll for .directory edits.
+    FileView {
+        path: root.kdeMenuFile
+        watchChanges: true
+        printErrors: false
+        onFileChanged: syncDebounce.restart()
+    }
+
+    Connections {
+        function onValuesChanged(): void {
+            syncDebounce.restart();
+        }
+
+        target: DesktopEntries.applications
+    }
+
+    Connections {
+        function onLauncherOpenChanged(): void {
+            if (Visibilities.launcherOpen)
+                root.refreshKde();
+        }
+
+        target: Visibilities
+    }
+
+    Timer {
+        id: syncDebounce
+
+        interval: 400
+        onTriggered: root.refreshKde()
+    }
+
+    Timer {
+        interval: 3000
+        repeat: true
+        running: root.shellReady && (editorLoader.item?.visible ?? false)
+        onTriggered: root.kdeRun(["stamp"], res => {
+            if (res?.ok && res.stamp !== LauncherCustomizer.kde?.stamp)
+                root.refreshKde();
+        })
+    }
+
+    // ============================================================ editor
 
     function openEditor(appId: string): void {
         editorLoader.active = true;
@@ -123,11 +368,22 @@ Scope {
         if (!w)
             return;
         w.visible = true;
+        root.refreshKde();
         if (appId)
             w.focusApp(appId);
     }
 
-    // ------------------------------------------------------------- wiring
+    LazyLoader {
+        id: editorLoader
+
+        active: false
+
+        Editor {
+            store: root
+        }
+    }
+
+    // ========================================================== wiring
 
     Settings {
         id: settings
@@ -146,20 +402,23 @@ Scope {
     }
 
     Component.onCompleted: {
+        iconFile.setText(root.iconSvg);
+        if (!root.shellReady)
+            return;
         // Mirror the Nexus placement setting into the config file the shell reads.
         let cur = {};
         try {
             cur = JSON.parse(dataFile.text() || "{}") || {};
         } catch (e) {}
         const key = root.placementKeys[settings.placement] ?? "bottom";
-        if (root.shellReady && cur.placement !== key) {
+        if (cur.placement !== key) {
             cur.placement = key;
             root.write(cur);
         }
-        iconFile.setText(root.iconSvg);
-        if (root.shellReady)
-            LauncherCustomizer.pluginActive = true;
+        LauncherCustomizer.pluginActive = true;
+        root.refreshKde();
     }
+
     Component.onDestruction: {
         Quickshell.execDetached(["rm", "-f", root.pluginDir + "/icon.svg"]);
         if (root.shellReady)
@@ -184,26 +443,21 @@ Scope {
             root.openEditor(appId);
         }
 
-        /// bottom | top | left | right | dock
+        /// bottom | top | left | right | dock  (experimental)
         function setPlacement(key: string): void {
             if (LauncherCustomizer.validPlacements.includes(key))
                 root.setPlacement(key);
         }
 
+        function sync(): void {
+            root.refreshKde();
+        }
+
+
         target: "launcherCustomizer"
     }
 
-    LazyLoader {
-        id: editorLoader
-
-        active: false
-
-        Editor {
-            store: root
-        }
-    }
-
-    // ------------------------------------------------------------- icon
+    // ============================================================== icon
 
     // Nexus draws font icons about 2px above centre, so the plugin's icon is an
     // SVG of the same Material Symbols glyph, centred by geometry. It is made
@@ -230,7 +484,7 @@ Scope {
         printErrors: false
     }
 
-    // ------------------------------------------------------------- patching
+    // ========================================================== patching
 
     // Restart the shell process (via its systemd service) instead of an
     // in-process reload, which can deadlock and does not restart plugins.
