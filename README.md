@@ -1,12 +1,16 @@
 # Launcher Customizer
 
+> ✅ **Tested and working on Caelestia KDE 2.7.5.**
+> Other versions may work too; if an update changes the code this plugin hooks
+> into, it switches itself off safely and a notification tells you.
+
 A [Caelestia](https://github.com/caelestia-kde) plugin that puts you in charge
 of the app launcher's categories — **synced both ways with the KDE application
 menu**.
 
 ## Open it
 
-- **Nexus → Plugins → Launcher Customizer → ⚙** opens the editor.
+- **Settings → Plugins → Launcher Customizer → ⚙** opens the editor.
 - **Right-click any app in the launcher → Move to category…** opens it on that app.
 - Script/keybind:
 
@@ -65,7 +69,7 @@ Caelestia** in the editor; those edits are stored in
 
 ## Install
 
-Nexus → Plugins → install from URL:
+Settings → Plugins → install from URL:
 
 ```
 https://github.com/COCONAT10MEN/launcher-customizer
