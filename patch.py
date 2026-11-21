@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "15"
+VERSION = "16"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -227,7 +227,9 @@ OPS = [
         '        if (t && t.id !== root.lcDrag.id && root.lcDrag.ids.includes(t.id)) {\n'
         '            root.lcDropId = t.id;\n'
         '            root.lcDropAfter = t.after;\n'
-        '        } else {\n'
+        '        } else if (t) {\n'
+        '            // Over itself or another group: no drop. Over empty space (the gap\n'
+        '            // after a row) the last spot stays, so letting go there still works.\n'
         '            root.lcDropId = "";\n'
         '        }\n'
         '    }\n'

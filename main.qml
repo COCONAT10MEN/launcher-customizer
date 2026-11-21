@@ -37,8 +37,10 @@ Scope {
     property var pendingOps: []          // mutators for the plugin's config
     property var pendingHidden: null     // Caelestia's hidden apps list, edited
     property var pendingShortcuts: ({})  // appId -> { key, label, text }
-    // The Settings page with the editor is showing.
-    property bool pageOpen: false
+    // The Settings page with the editor is showing. Counted, because when
+    // Settings rebuilds the page the old one closes after the new one opened.
+    property int pagesOpen: 0
+    readonly property bool pageOpen: root.pagesOpen > 0
     property bool saving: false
 
     readonly property bool dirty: root.kdeDirty || root.pendingOps.length > 0 || root.pendingHidden !== null || Object.keys(root.pendingShortcuts).length > 0

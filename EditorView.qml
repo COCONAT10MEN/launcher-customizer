@@ -751,7 +751,7 @@ Item {
     Component.onCompleted: {
         win.settlePanes();
         if (win.store) {
-            win.store.pageOpen = true;
+            win.store.pagesOpen++;
             win.store.refreshView();
         }
         // After the list has built itself, or a tab switch in the same
@@ -775,7 +775,7 @@ Item {
 
     Component.onDestruction: {
         if (win.store)
-            win.store.pageOpen = false;
+            win.store.pagesOpen = Math.max(0, win.store.pagesOpen - 1);
     }
 
     Connections {
