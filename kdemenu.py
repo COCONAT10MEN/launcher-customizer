@@ -79,7 +79,8 @@ def file_map(paths):
 
     def h(path):
         if os.path.islink(path):
-            return "L:" + os.readlink(path)
+            # By where it points, so a copy of a relative link compares equal.
+            return "L:" + os.path.realpath(path)
         with open(path, "rb") as f:
             return hashlib.sha1(f.read()).hexdigest()
 
@@ -113,6 +114,15 @@ def stage_begin():
     for key in ("dirs", "apps"):
         if os.path.isdir(REAL_PATHS[key]):
             shutil.copytree(REAL_PATHS[key], sp[key], symlinks=True, dirs_exist_ok=True)
+            # Relative links would point nowhere from the copy: make them absolute.
+            for root_dir, _subdirs, files in os.walk(sp[key]):
+                for name in files:
+                    link = os.path.join(root_dir, name)
+                    if os.path.islink(link) and not os.path.isabs(os.readlink(link)):
+                        real = os.path.join(REAL_PATHS[key], os.path.relpath(link, sp[key]))
+                        target = os.path.realpath(real)
+                        os.unlink(link)
+                        os.symlink(target, link)
         else:
             os.makedirs(sp[key], exist_ok=True)
     with open(os.path.join(STAGE, "manifest.json"), "w") as f:

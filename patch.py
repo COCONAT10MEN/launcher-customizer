@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "14"
+VERSION = "15"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -181,7 +181,6 @@ OPS = [
         '    property string lcDropId: ""\n'
         '    property bool lcDropAfter: false\n'
         '    property point lcDragPos: Qt.point(0, 0)\n'
-        '    readonly property var lcTopLook: LauncherCustomizer.lookFor(root.currentCategory)\n'
         '\n'
         '    function lcGroupOf(id: string): var {\n'
         '        if (gridModel.values.some(a => a.id === id))\n'
@@ -283,18 +282,6 @@ OPS = [
         '                }\n',
         '                StyledScrollBar.vertical: StyledScrollBar {\n'
         '                    flickable: grid\n'
-        '                }\n'
-        '\n'
-        "                // Launcher Customizer: the category's own background, behind its tiles.\n"
-        '                StyledRect {\n'
-        '                    z: -1\n'
-        '                    visible: root.lcTopLook.enabled && grid.count > 0\n'
-        '                    readonly property int perRow: Math.max(1, Math.floor(grid.width / grid.cellWidth))\n'
-        '\n'
-        '                    width: Math.min(grid.count, perRow) * grid.cellWidth\n'
-        '                    height: Math.ceil(grid.count / perRow) * grid.cellHeight\n'
-        '                    radius: Tokens.rounding.large\n'
-        '                    color: root.lcTopLook.color\n'
         '                }\n'
         '\n'
         '                // Launcher Customizer: one block per KDE subcategory, stacked or\n'
@@ -644,14 +631,6 @@ OPS = [
         '        // Launcher Customizer: "Pin to top" acts on the category the tile is shown in.\n'
         '        LauncherCustomizer.contextCategory = targetItem?.lcCat ?? root.currentCategory;\n'
         '        contextMenu.openFor(app, targetItem);\n',
-    ),
-    (
-        'modules/launcher/AppBrowserGrid.qml',
-        '                delegate: AppTile {\n'
-        '                    browser: root\n',
-        '                delegate: AppTile {\n'
-        '                    browser: root\n'
-        '                    lcLabel: root.lcTopLook.label\n',
     ),
     (
         'modules/launcher/items/AppContextMenu.qml',

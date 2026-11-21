@@ -345,6 +345,10 @@ Scope {
             if (job?.staging) {
                 root.stageView = res.staged ? res : null;
                 root.kdeDirty = !!res.stageDirty;
+                // Undone back to the saved menu: drop the working copy, so
+                // changes made in KDE show up again.
+                if (res.staged && !res.stageDirty && !res.canUndo && !root.saving)
+                    root.kdeRun(["discard"], null, false, true);
             }
             if (!res.staged)
                 LauncherCustomizer.kde = res;

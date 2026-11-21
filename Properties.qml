@@ -641,8 +641,11 @@ Item {
             }
 
             // Launcher look: an optional background behind this category's apps.
+            // Subcategories only: top-level categories are the launcher's tabs.
             RowLayout {
                 id: lookRow
+
+                visible: mf.path.includes("/")
 
                 readonly property var look: props.store.cfg.looks?.["kde:" + mf.path] ?? ({})
 
@@ -694,23 +697,6 @@ Item {
                 Layout.fillWidth: true
                 Layout.topMargin: Tokens.spacing.medium
                 spacing: Tokens.spacing.small
-
-                TextButton {
-                    text: qsTr("New launcher here")
-                    onClicked: {
-                        props.editor.cat = mf.path;
-                        props.editor.newLauncher();
-                    }
-                }
-
-                TextButton {
-                    text: qsTr("New subcategory")
-                    type: TextButton.Tonal
-                    onClicked: {
-                        props.editor.cat = mf.path;
-                        props.editor.newCategory(true);
-                    }
-                }
 
                 TextButton {
                     visible: mf.n?.hasOverride ?? false

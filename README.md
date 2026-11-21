@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.3.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.3.1-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -36,7 +36,7 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
   appear inside it as their own titled sections, right below the category's own apps. No
   extra tabs. Pick *Stacked* (one under another) or *Flowing*, where sections sit side
   by side when they fit, each just big enough for what it holds.
-- **Colour your categories.** Give any category a background in the launcher, picked
+- **Colour your subcategories.** Give any subcategory a background in the launcher, picked
   with a full colour picker, a hex code or a swatch from your current theme. Text on it
   stays readable by itself.
 - **Arrange the launcher like your desktop.** Switch the launcher's sort button to
@@ -120,8 +120,9 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 
 | What | Where |
 | --- | --- |
-| Save your changes | *Save* (next to *⋮*) · `Ctrl+S` |
-| Switch category | the tabs along the top; subcategories unfold inside their category |
+| Save your changes | *Save* (the split button with *⋮*) · `Ctrl+S` |
+| Switch category | the tabs along the top (drag, or scroll with the mouse wheel); subcategories unfold inside their category |
+| Rename a category, change its icon or comment | the pencil next to its name above the list |
 | Add a launcher, category, subcategory or separator | *New* button or right-click · `Ctrl+N`, `Ctrl+Shift+N` |
 | Move, copy or remove apps | toolbar or right-click · `Ctrl+X` `Ctrl+C` `Ctrl+V` `Del` · drag onto a category tab or subcategory |
 | Change the order | arrows or right-click · `Alt+Up` `Alt+Down` · drag within the list · or drag tiles in the launcher with *Custom* sort |
@@ -129,7 +130,7 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 | Look inside a subcategory | the arrow next to it in the list (or double-click it) |
 | Hide or show an app or category | hover it and click the eye · right-click -> *Hide* · *Hidden* switch (shared with *Settings -> Applications & Shortcuts*) |
 | Pin an app to the top of a category | right-click it in the launcher or the editor -> *Pin to top* · *Pin to top of…* switch |
-| Category background in the launcher | select the category -> *Background in the launcher*, click the swatch to change the colour |
+| Subcategory background in the launcher | select the subcategory -> *Background in the launcher*, click the swatch to change the colour |
 | Stacked or flowing subcategories, category icon style, new-app dots | *Launcher settings* (the sliders button) |
 | Export or import your layout | *Launcher settings -> Backup and share* · *⋮ -> Export / Import layout…* |
 | See hidden apps | the eye button next to the search box |
@@ -146,7 +147,7 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 | Dedicated graphics card | *Use dedicated graphics card* |
 | Busy cursor while it starts | *Launch feedback* |
 | Launch it, open its folder, copy its file path | right-click, or the buttons under an app's details |
-| Category name, comment, icon, hidden | the same fields when a category is selected |
+| Category name, comment, icon, hidden | the same fields when a category is selected (new launchers and subcategories: *New*) |
 
 Also: multi-select with `Ctrl`/`Shift`-click, *Also show in…* to put an app in several
 categories, undo for every unsaved change (`Ctrl+Z`, 40 steps), and a button that opens

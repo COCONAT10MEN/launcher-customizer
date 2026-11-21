@@ -615,11 +615,18 @@ Item {
         focusLater.start();
     }
 
+    // The list fills only once the page knows which tab to show, so it is
+    // built once instead of swapped while Settings is still opening.
+    property bool ready: false
+
     Timer {
         id: focusLater
 
         interval: 150
-        onTriggered: win.takeFocusRequest()
+        onTriggered: {
+            win.takeFocusRequest();
+            win.ready = true;
+        }
     }
 
     Component.onDestruction: {
@@ -782,25 +789,98 @@ Item {
                     ToolTip.text: qsTr("Launcher settings")
                 }
 
-                // Nothing is written until this is pressed.
-                TextButton {
-                    text: win.store?.saving ? qsTr("Saving…") : qsTr("Save")
-                    type: TextButton.Filled
-                    disabled: !(win.store?.dirty ?? false) || (win.store?.saving ?? false)
-                    onClicked: win.store.save(null)
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 600
-                    ToolTip.text: (win.store?.dirty ?? false) ? qsTr("Save changes (Ctrl+S)") : qsTr("No unsaved changes")
-                }
+                // Save and the ⋮ menu as one split button. Nothing is written
+                // until Save is pressed; it lights up when there is something to save.
+                Row {
+                    id: saveSplit
 
-                IconButton {
-                    id: moreBtn
+                    readonly property bool dirty: win.store?.dirty ?? false
+                    readonly property bool busy: win.store?.saving ?? false
+                    readonly property bool canSave: saveSplit.dirty && !saveSplit.busy
+                    readonly property color fill: saveSplit.dirty ? Colours.palette.m3primary : Colours.palette.m3secondaryContainer
+                    readonly property color ink: saveSplit.dirty ? Colours.palette.m3onPrimary : Colours.palette.m3onSecondaryContainer
+                    readonly property real h: 40
 
-                    icon: "more_vert"
-                    type: IconButton.Tonal
-                    onClicked: {
-                        const p = moreBtn.mapToItem(rootItem, moreBtn.width, moreBtn.height + 4);
-                        win.moreMenu(p.x - 260, p.y);
+                    spacing: Math.max(2, Math.floor(Tokens.spacing.extraSmall / 2))
+
+                    StyledRect {
+                        implicitWidth: saveRow.implicitWidth + Tokens.padding.large * 2
+                        implicitHeight: saveSplit.h
+                        radius: saveSplit.h / 2 * Math.min(1, Tokens.rounding.scale)
+                        topRightRadius: Tokens.rounding.medium / 2
+                        bottomRightRadius: Tokens.rounding.medium / 2
+                        color: saveSplit.fill
+
+                        StateLayer {
+                            topRightRadius: parent.topRightRadius
+                            bottomRightRadius: parent.bottomRightRadius
+                            color: saveSplit.ink
+                            disabled: !saveSplit.canSave
+                            onClicked: win.store.save(null)
+                        }
+
+                        RowLayout {
+                            id: saveRow
+
+                            anchors.centerIn: parent
+                            spacing: Tokens.spacing.small
+                            opacity: saveSplit.canSave ? 1 : 0.45
+
+                            Behavior on opacity {
+                                Anim {
+                                    type: Anim.DefaultEffects
+                                }
+                            }
+
+                            MaterialIcon {
+                                Layout.alignment: Qt.AlignVCenter
+                                text: saveSplit.busy ? "progress_activity" : "save"
+                                color: saveSplit.ink
+                                fill: saveSplit.dirty ? 1 : 0
+                            }
+
+                            StyledText {
+                                Layout.alignment: Qt.AlignVCenter
+                                text: saveSplit.busy ? qsTr("Saving…") : qsTr("Save")
+                                color: saveSplit.ink
+                                font: Tokens.font.label.large
+                            }
+                        }
+
+                        ToolTip.visible: saveHover.hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: saveSplit.dirty ? qsTr("Save changes (Ctrl+S)") : qsTr("No unsaved changes")
+
+                        HoverHandler {
+                            id: saveHover
+                        }
+                    }
+
+                    StyledRect {
+                        id: moreBtn
+
+                        implicitWidth: saveSplit.h
+                        implicitHeight: saveSplit.h
+                        radius: saveSplit.h / 2 * Math.min(1, Tokens.rounding.scale)
+                        topLeftRadius: Tokens.rounding.medium / 2
+                        bottomLeftRadius: Tokens.rounding.medium / 2
+                        color: saveSplit.fill
+
+                        StateLayer {
+                            rect.topLeftRadius: parent.topLeftRadius
+                            rect.bottomLeftRadius: parent.bottomLeftRadius
+                            color: saveSplit.ink
+                            onClicked: {
+                                const p = moreBtn.mapToItem(rootItem, moreBtn.width, moreBtn.height + 4);
+                                win.moreMenu(p.x - 260, p.y);
+                            }
+                        }
+
+                        MaterialIcon {
+                            anchors.centerIn: parent
+                            text: "more_vert"
+                            color: saveSplit.ink
+                        }
                     }
                 }
             }
@@ -817,6 +897,17 @@ Item {
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: win.tabs
+
+                // A mouse wheel (with or without Shift) scrolls the tabs sideways.
+                WheelHandler {
+                    target: null
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    onWheel: event => {
+                        const d = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y;
+                        const max = tabStrip.originX + Math.max(0, tabStrip.contentWidth - tabStrip.width);
+                        tabStrip.contentX = Math.max(tabStrip.originX, Math.min(max, tabStrip.contentX - d));
+                    }
+                }
 
                 delegate: StyledRect {
                     id: tab
@@ -918,10 +1009,32 @@ Item {
                             spacing: Tokens.spacing.small
 
                             StyledText {
-                                Layout.fillWidth: true
+                                Layout.fillWidth: !editCatBtn.visible
                                 text: win.search ? qsTr("Results") : (win.page ? win.nodeName(win.page) : qsTr("Menu"))
                                 elide: Text.ElideRight
                                 font: Tokens.font.title.medium
+                            }
+
+                            // The category's own details: name, icon, comment.
+                            IconButton {
+                                id: editCatBtn
+
+                                visible: !win.search && !!win.page
+                                icon: "edit"
+                                type: IconButton.Text
+                                onClicked: {
+                                    win.picked = ({});
+                                    win.focusKey = "menu:" + win.page;
+                                    win.detailsShown = true;
+                                }
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 600
+                                ToolTip.text: qsTr("Edit %1").arg(win.nodeName(win.page))
+                            }
+
+                            Item {
+                                visible: editCatBtn.visible
+                                Layout.fillWidth: true
                             }
 
                             StyledText {
@@ -997,7 +1110,7 @@ Item {
                             spacing: 2
                             boundsBehavior: Flickable.StopAtBounds
                             model: ScriptModel {
-                                values: win.rows
+                                values: win.ready ? win.rows : []
                                 objectProp: "rowKey"
                             }
                             ScrollBar.vertical: StyledScrollBar {
