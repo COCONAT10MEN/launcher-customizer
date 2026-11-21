@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.2.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.3.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -21,8 +21,8 @@ into a fixed set of categories that you can't rename, reorder or add to. Launche
 Customizer, a plugin for [Caelestia KDE](https://github.com/caelestia-kde/caelestia),
 replaces that with a full editor for your launcher: your own categories, apps exactly
 where you want them, custom launchers for your own commands and scripts, global
-shortcuts, and the app details themselves, all in one window styled like the rest of
-Caelestia.
+shortcuts, and the app details themselves. It lives right inside Settings, under
+*Panels & Interface -> Launcher*, styled like the rest of Caelestia.
 
 ## What it offers
 
@@ -59,8 +59,11 @@ Caelestia.
   hiding or showing an app anywhere shows up everywhere.
 - **Hidden apps, found.** Show the entries apps hide by default, and bring back the ones
   you want.
-- **Safe to experiment.** Every change can be undone, and *Restore to system menu* puts
-  everything back in one click.
+- **Nothing changes until you save.** Edit as much as you like: the *Save* button lights
+  up when there is something to save, and nothing reaches the launcher or KDE before you
+  press it. Leave the page with unsaved changes and Settings asks whether to save them.
+- **Safe to experiment.** Every unsaved change can be undone, and *Restore to system
+  menu* puts everything back in one click.
 - **Back up and share your layout.** Export categories, order, icons, pins, backgrounds,
   hidden apps and app shortcuts to one file, and import it on another machine (or after a
   reinstall). Importing can be undone too.
@@ -103,8 +106,10 @@ them gone. With the plugin off, the launcher shows Caelestia's stock categories.
 
 ## Opening the editor
 
-- *Settings -> Plugins -> Launcher Customizer -> ⚙*
-- Right-click an app in the launcher -> *App info*
+- *Settings -> Panels & Interface -> Launcher -> Launcher Customizer*
+- *Settings -> Plugins -> Launcher Customizer -> ⚙* (takes you to the same page)
+- Right-click an app in the launcher -> *App info*: opens the app's category tab, with its
+  subcategory unfolded and the app selected
 - From a script or keybind:
 
 ```bash
@@ -115,17 +120,19 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 
 | What | Where |
 | --- | --- |
+| Save your changes | *Save* (next to *⋮*) · `Ctrl+S` |
+| Switch category | the tabs along the top; subcategories unfold inside their category |
 | Add a launcher, category, subcategory or separator | *New* button or right-click · `Ctrl+N`, `Ctrl+Shift+N` |
-| Move, copy or remove apps | toolbar or right-click · `Ctrl+X` `Ctrl+C` `Ctrl+V` `Del` · drag onto a category |
+| Move, copy or remove apps | toolbar or right-click · `Ctrl+X` `Ctrl+C` `Ctrl+V` `Del` · drag onto a category tab or subcategory |
 | Change the order | arrows or right-click · `Alt+Up` `Alt+Down` · drag within the list · or drag tiles in the launcher with *Custom* sort |
 | Sort a category, or everything | sort button · right-click a category · *⋮* menu |
-| Look inside a category or subcategory | the arrow next to it, in the tree or the list (or double-click it) |
+| Look inside a subcategory | the arrow next to it in the list (or double-click it) |
 | Hide or show an app or category | hover it and click the eye · right-click -> *Hide* · *Hidden* switch (shared with *Settings -> Applications & Shortcuts*) |
 | Pin an app to the top of a category | right-click it in the launcher or the editor -> *Pin to top* · *Pin to top of…* switch |
 | Category background in the launcher | select the category -> *Background in the launcher*, click the swatch to change the colour |
 | Stacked or flowing subcategories, category icon style, new-app dots | *Launcher settings* (the sliders button) |
 | Export or import your layout | *Launcher settings -> Backup and share* · *⋮ -> Export / Import layout…* |
-| See hidden apps | *Show hidden* switch |
+| See hidden apps | the eye button next to the search box |
 | Find an app | search box (name, description, comment, keywords) |
 | Start over | *⋮ -> Restore to system menu…* |
 | Name, description, comment | the fields at the top of an app |
@@ -142,13 +149,17 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 | Category name, comment, icon, hidden | the same fields when a category is selected |
 
 Also: multi-select with `Ctrl`/`Shift`-click, *Also show in…* to put an app in several
-categories, undo for every change (`Ctrl+Z`, 40 steps), and a button that opens KDE's own
-Menu Editor if you ever want it. Anything KDE's Menu Editor can do, you can do here.
+categories, undo for every unsaved change (`Ctrl+Z`, 40 steps), and a button that opens
+KDE's own Menu Editor if you ever want it. Anything KDE's Menu Editor can do, you can do
+here. On a narrow Settings window the details of what you select open in place of the
+list (the arrow takes you back); on a wider one they sit beside it.
 
 ## How it stays in sync
 
-Changes are written exactly where KDE's Menu Editor writes them, and KDE's menu cache is
-rebuilt after each one:
+Until you save, your edits go to a private working copy of the menu files (in
+`~/.cache/caelestia/launcher-customizer/stage`), so the launcher and KDE keep showing your
+saved layout. *Save* writes only the files that changed, exactly where KDE's Menu Editor
+writes them, and rebuilds KDE's menu cache:
 
 | Change | KDE file |
 | --- | --- |
@@ -158,7 +169,8 @@ rebuilt after each one:
 | Shortcuts | KDE's global shortcut service |
 
 The other way round, edits made in KDE's Menu Editor, newly installed apps and renamed
-categories show up in Caelestia by themselves. The menu is read with a built-in
+categories show up in Caelestia by themselves (while you have unsaved changes, the editor
+keeps showing your working copy until you save or discard). The menu is read with a built-in
 implementation of the freedesktop.org menu spec, checked entry for entry against KDE's
 own `kbuildsycoca6 --menutest`.
 
@@ -169,7 +181,8 @@ own `kbuildsycoca6 --menutest`.
   you set in the editor and that KDE uses); *Favorites* and *All Applications* keep their
   own. Pinned apps always come first.
 
-Everything else is in the editor's *Launcher settings*:
+Everything else is in the editor's *Launcher settings* (the sliders button), and like any
+other edit it applies when you press *Save*:
 
 - **Subcategories** - *Stacked*: sections one under another, titles on the left.
   *Flowing*: sections side by side when there is room, titles centred.
@@ -195,8 +208,9 @@ Everything else is in the editor's *Launcher settings*:
 
 - Caelestia's plugin API has no hooks for the launcher, so on every shell start
   `patch.py` adds `modules/launcher/services/LauncherCustomizer.qml` and replaces a few
-  exact snippets (launcher categories, the category button and app menu, the Plugins
-  page). Each change sits between `// launcher-customizer:begin` and `:end` markers that
+  exact snippets (launcher categories, the category button and app menu, the Settings
+  page that hosts the editor, the Launcher and Plugins pages, and the check that asks
+  before leaving the editor with unsaved changes). Each change sits between `// launcher-customizer:begin` and `:end` markers that
   hold the original text, so a revert is byte for byte.
 - After a Caelestia update it patches again and restarts the shell once, through its
   `caelestia-shell` systemd service. If an update changed the code so a snippet no longer
@@ -205,8 +219,8 @@ Everything else is in the editor's *Launcher settings*:
 ## Repository layout
 
 ```
-main.qml              plugin entry: KDE sync, editor actions, patching
-Editor.qml            the editor window: category tree and contents
+main.qml              plugin entry: KDE sync, unsaved changes, saving, patching
+EditorView.qml        the editor page: category tabs, contents, Save
 Properties.qml        properties of the selected launcher, category or separator
 LauncherSettings.qml  layout, icon style, new-app dots, backup
 CategoryColorPicker.qml  colour picker for category backgrounds
@@ -217,7 +231,8 @@ CategoryPicker.qml    category chooser for Move to / Also show in
 CategoryIcon.qml      category icon (Material glyph or image)
 kdemenu.py            freedesktop menu reader and KDE Menu Editor style writer
 patch.py              idempotent, revertible shell patcher
-shell/                LauncherCustomizer.qml, the singleton patch.py installs
+shell/                LauncherCustomizer.qml (singleton) and LauncherCustomizerPage.qml
+                      (the Settings page), installed by patch.py
 material-symbols.txt  icon names for the picker
 restart-shell.sh      restarts the shell through its systemd service
 assets/               README artwork

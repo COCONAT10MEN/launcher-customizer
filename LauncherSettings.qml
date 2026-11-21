@@ -14,6 +14,7 @@ Item {
 
     required property var store
     property bool shown: false
+    readonly property int newDays: Math.max(1, Number(dlg.store.cfg.newDays ?? 7) || 7)
 
     function open(): void {
         dlg.shown = true;
@@ -112,7 +113,7 @@ Item {
                     icon: "view_agenda"
                     title: qsTr("Stacked")
                     hint: qsTr("One under another")
-                    chosen: LauncherCustomizer.sectionLayout === "stack"
+                    chosen: (dlg.store.cfg.sectionLayout ?? "stack") !== "flow"
                     onPicked: dlg.store.setSetting("sectionLayout", "stack")
                 }
 
@@ -120,7 +121,7 @@ Item {
                     icon: "view_quilt"
                     title: qsTr("Flowing")
                     hint: qsTr("Side by side when they fit")
-                    chosen: LauncherCustomizer.sectionLayout === "flow"
+                    chosen: dlg.store.cfg.sectionLayout === "flow"
                     onPicked: dlg.store.setSetting("sectionLayout", "flow")
                 }
             }
@@ -138,7 +139,7 @@ Item {
                     icon: "interests"
                     title: qsTr("Material")
                     hint: qsTr("Caelestia's icon style")
-                    chosen: LauncherCustomizer.iconStyle === "material"
+                    chosen: dlg.store.cfg.iconStyle !== "theme"
                     onPicked: dlg.store.setIconStyle("material")
                 }
 
@@ -146,7 +147,7 @@ Item {
                     icon: "image"
                     title: qsTr("Icon theme")
                     hint: qsTr("Your KDE icon theme")
-                    chosen: LauncherCustomizer.iconStyle === "theme"
+                    chosen: dlg.store.cfg.iconStyle === "theme"
                     onPicked: dlg.store.setIconStyle("theme")
                 }
             }
@@ -169,7 +170,7 @@ Item {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: qsTr("Mark apps installed or updated in the last %n day(s)", "", LauncherCustomizer.newDays)
+                    text: dlg.newDays === 1 ? qsTr("Mark apps installed or updated in the last day") : qsTr("Mark apps installed or updated in the last %1 days").arg(dlg.newDays)
                     wrapMode: Text.WordWrap
                     font: Tokens.font.body.medium
                 }
@@ -177,19 +178,19 @@ Item {
                 IconButton {
                     icon: "remove"
                     type: IconButton.Text
-                    disabled: LauncherCustomizer.newDays <= 1
-                    onClicked: dlg.store.setSetting("newDays", LauncherCustomizer.newDays - 1)
+                    disabled: dlg.newDays <= 1
+                    onClicked: dlg.store.setSetting("newDays", dlg.newDays - 1)
                 }
 
                 IconButton {
                     icon: "add"
                     type: IconButton.Text
-                    disabled: LauncherCustomizer.newDays >= 60
-                    onClicked: dlg.store.setSetting("newDays", LauncherCustomizer.newDays + 1)
+                    disabled: dlg.newDays >= 60
+                    onClicked: dlg.store.setSetting("newDays", dlg.newDays + 1)
                 }
 
                 StyledSwitch {
-                    checked: LauncherCustomizer.newDot
+                    checked: dlg.store.cfg.newDot !== false
                     onToggled: dlg.store.setSetting("newDot", checked)
                 }
             }
@@ -201,7 +202,7 @@ Item {
 
             StyledText {
                 Layout.fillWidth: true
-                text: qsTr("Categories, order, icons, pins, backgrounds, hidden apps and app shortcuts, in one file.")
+                text: qsTr("Categories, order, icons, pins, backgrounds, hidden apps and app shortcuts, in one file. Exports what is saved; save or discard changes before importing.")
                 wrapMode: Text.WordWrap
                 color: Colours.palette.m3onSurfaceVariant
                 font: Tokens.font.body.small

@@ -6,6 +6,7 @@ import Caelestia.Config
 import qs.services
 import qs.utils
 import qs.modules.launcher.services
+import qs.modules.nexus
 import "."
 
 // Launcher Customizer: everything KDE's Menu Editor does, inside Caelestia,
@@ -21,6 +22,107 @@ Scope {
     readonly property string dataPath: root.configHome + "/caelestia/launcher-customizer.json"
     readonly property string kdeMenuFile: root.configHome + "/menus/applications-kmenuedit.menu"
     readonly property string iconDir: root.dataHome + "/caelestia/category-icons"
+    readonly property string stageDir: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/caelestia/launcher-customizer/stage"
+
+    // ================================================= unsaved changes
+    //
+    // The editor never changes anything directly. KDE menu edits go to a
+    // working copy of the menu files (kdemenu.py's LC_STAGE); shortcuts,
+    // hidden apps and launcher settings wait here. Save writes it all,
+    // Don't save drops it. The launcher and KDE only ever see saved state.
+
+    // The working copy as kdemenu.py reports it, null while there is none.
+    property var stageView: null
+    property bool kdeDirty: false
+    property var pendingOps: []          // mutators for the plugin's config
+    property var pendingHidden: null     // Caelestia's hidden apps list, edited
+    property var pendingShortcuts: ({})  // appId -> { key, label, text }
+    // The Settings page with the editor is showing.
+    property bool pageOpen: false
+    property bool saving: false
+
+    readonly property bool dirty: root.kdeDirty || root.pendingOps.length > 0 || root.pendingHidden !== null || Object.keys(root.pendingShortcuts).length > 0
+    /// What the editor shows: the working copy, or the saved menu.
+    readonly property var view: root.stageView ?? (root.shellReady ? LauncherCustomizer.kde : ({}))
+    /// The plugin's config with unsaved setting changes applied.
+    readonly property var cfg: {
+        const d = JSON.parse(JSON.stringify(root.shellReady ? (LauncherCustomizer.data ?? {}) : {}));
+        for (const op of root.pendingOps)
+            op(d);
+        return d;
+    }
+
+    signal leaveRequested(var proceed)
+
+    function askLeave(proceed: var): void {
+        root.leaveRequested(proceed);
+    }
+
+    /// Write every unsaved change, then run done().
+    function save(done: var): void {
+        if (root.saving)
+            return;
+        root.saving = true;
+        const finish = () => {
+            for (const id of Object.keys(root.pendingShortcuts)) {
+                const p = root.pendingShortcuts[id];
+                root.kdeRun(["shortcut", id, String(p.key), p.label], null, true);
+            }
+            if (root.pendingHidden !== null)
+                GlobalConfig.launcher.hiddenApps = root.pendingHidden;
+            if (root.pendingOps.length > 0) {
+                const ops = root.pendingOps;
+                root.update(d => {
+                    for (const op of ops)
+                        op(d);
+                });
+            }
+            root.pendingOps = [];
+            root.pendingHidden = null;
+            root.pendingShortcuts = ({});
+            // Picks up the new shortcuts and the saved menu.
+            root.kdeRun(["dump"], () => {
+                root.saving = false;
+                Toaster.toast(qsTr("Launcher Customizer"), qsTr("Changes saved"), "check_circle");
+                if (done)
+                    done();
+            }, true);
+        };
+        if (root.stageView)
+            root.kdeRun(["commit"], res => {
+                if (res?.ok)
+                    finish();
+                else
+                    root.saving = false;
+            }, false, true);
+        else
+            finish();
+    }
+
+    /// Drop every unsaved change, then run done().
+    function discard(done: var): void {
+        root.pendingOps = [];
+        root.pendingHidden = null;
+        root.pendingShortcuts = ({});
+        root.kdeRun(["discard"], () => {
+            if (done)
+                done();
+        }, false, true);
+    }
+
+    /// Change the plugin's config when the user saves.
+    function edit(mutator: var): void {
+        root.pendingOps = root.pendingOps.concat([mutator]);
+    }
+
+    function pinned(categoryId: string, appId: string): bool {
+        return !!appId && (root.cfg.pinned?.[categoryId] ?? []).includes(appId);
+    }
+
+    function shortcutOf(app: var): string {
+        const p = root.pendingShortcuts[app?.id ?? ""];
+        return p ? p.text : (app?.shortcut ?? "");
+    }
 
     // False only on the first start after install or a Caelestia update,
     // before patch.py has added the shell side; the shell restarts right after.
@@ -49,32 +151,40 @@ Scope {
 
 
     function setIconStyle(style: string): void {
-        root.update(d => d.iconStyle = style);
+        root.edit(d => d.iconStyle = style);
     }
 
     function setSetting(key: string, value: var): void {
-        root.update(d => d[key] = value);
+        root.edit(d => d[key] = value);
     }
 
     /// Category background: { enabled, color } ("#rrggbb" or "#aarrggbb").
     function setLook(categoryId: string, look: var): void {
-        root.update(d => {
+        root.edit(d => {
             d.looks = d.looks && typeof d.looks === "object" ? d.looks : {};
             d.looks[categoryId] = Object.assign({}, d.looks[categoryId] ?? {}, look);
         });
     }
 
+    /// From the editor: waits for Save.
     function pin(categoryId: string, appId: string, on: bool): void {
-        root.update(d => {
-            d.pinned = d.pinned && typeof d.pinned === "object" ? d.pinned : {};
-            const list = (d.pinned[categoryId] ?? []).filter(x => x !== appId);
-            if (on)
-                list.push(appId);
-            if (list.length > 0)
-                d.pinned[categoryId] = list;
-            else
-                delete d.pinned[categoryId];
-        });
+        root.edit(d => root.pinIn(d, categoryId, appId, on));
+    }
+
+    /// From the launcher's own app menu: right away.
+    function pinNow(categoryId: string, appId: string, on: bool): void {
+        root.update(d => root.pinIn(d, categoryId, appId, on));
+    }
+
+    function pinIn(d: var, categoryId: string, appId: string, on: bool): void {
+        d.pinned = d.pinned && typeof d.pinned === "object" ? d.pinned : {};
+        const list = (d.pinned[categoryId] ?? []).filter(x => x !== appId);
+        if (on)
+            list.push(appId);
+        if (list.length > 0)
+            d.pinned[categoryId] = list;
+        else
+            delete d.pinned[categoryId];
     }
 
     function markSeen(appId: string): void {
@@ -99,23 +209,25 @@ Scope {
         return root.hiddenInCaelestia(appId) && !(GlobalConfig.launcher.hiddenApps ?? []).includes(appId);
     }
 
+    readonly property var hiddenList: root.pendingHidden ?? (GlobalConfig.launcher.hiddenApps ?? [])
+
     function appHidden(app: var): bool {
-        return !!app && (!!app.noDisplay || root.hiddenInCaelestia(app.id));
+        return !!app && (!!app.noDisplay || (!!app.id && Strings.testRegexList(root.hiddenList, app.id)));
     }
 
     function setAppHidden(app: var, hide: bool): void {
         if (!app?.id)
             return;
-        const list = (GlobalConfig.launcher.hiddenApps ?? []).slice();
+        const list = root.hiddenList.slice();
         if (hide) {
-            if (!root.hiddenInCaelestia(app.id))
-                GlobalConfig.launcher.hiddenApps = list.concat([app.id]);
+            if (!Strings.testRegexList(list, app.id))
+                root.pendingHidden = list.concat([app.id]);
             return;
         }
         if (root.hiddenByPattern(app.id))
             Toaster.toast(qsTr("Launcher Customizer"), qsTr("%1 is hidden by a pattern in Caelestia's config file").arg(app.name ?? app.id), "warning");
         if (list.includes(app.id))
-            GlobalConfig.launcher.hiddenApps = list.filter(x => x !== app.id);
+            root.pendingHidden = list.filter(x => x !== app.id);
         if (app.noDisplay)
             root.appSet(app.id, { noDisplay: false });
     }
@@ -127,6 +239,10 @@ Scope {
     }
 
     function importLayout(): void {
+        if (root.dirty) {
+            Toaster.toast(qsTr("Launcher Customizer"), qsTr("Save or discard your changes before importing a layout"), "warning");
+            return;
+        }
         openDialog.running = true;
     }
 
@@ -137,7 +253,7 @@ Scope {
         root.kdeRun(["export", path, hidden], res => {
             if (res?.ok)
                 Toaster.toast(qsTr("Layout exported"), path, "check_circle");
-        });
+        }, true);
     }
 
     function doImport(path: string): void {
@@ -156,7 +272,7 @@ Scope {
                     hidden.push(id);
             GlobalConfig.launcher.hiddenApps = hidden;
             Toaster.toast(qsTr("Layout imported"), qsTr("Undo puts your previous layout back"), "check_circle");
-        });
+        }, true);
     }
 
     Process {
@@ -194,10 +310,12 @@ Scope {
 
     signal kdeChanged(var result)
 
-    /// Run kdemenu.py; commands are queued so edits never race.
-    function kdeRun(args: var, done: var): void {
+    /// Run kdemenu.py; commands are queued so edits never race. Editor
+    /// commands work on the working copy; `real` ones (the launcher's own
+    /// drag order, refreshes, export/import) on the saved menu.
+    function kdeRun(args: var, done: var, real: bool, staging: bool): void {
         const q = root.kdeQueue.slice();
-        q.push({ args: args, done: done });
+        q.push({ args: args, done: done, real: !!real, staging: !!staging || !real });
         root.kdeQueue = q;
         root.kdeNext();
     }
@@ -210,6 +328,7 @@ Scope {
         root.kdeQueue = q;
         kdeProc.job = job;
         root.kdeBusy = true;
+        kdeProc.environment = job.staging ? ({ LC_STAGE: root.stageDir }) : ({});
         kdeProc.command = ["python3", "-I", root.pluginDir + "/kdemenu.py"].concat(job.args);
         kdeProc.running = true;
     }
@@ -223,7 +342,12 @@ Scope {
             res = { ok: false, error: "kdemenu.py: " + (text || "no output").slice(0, 200) };
         }
         if (res.ok && res.categories) {
-            LauncherCustomizer.kde = res;
+            if (job?.staging) {
+                root.stageView = res.staged ? res : null;
+                root.kdeDirty = !!res.stageDirty;
+            }
+            if (!res.staged)
+                LauncherCustomizer.kde = res;
             root.kdeUpdated = Date.now();
             root.kdeError = "";
             root.kdeChanged(res);
@@ -243,9 +367,14 @@ Scope {
         if (!root.shellReady)
             return;
         // One pending refresh is enough.
-        if (root.kdeQueue.some(j => j.args[0] === "dump"))
+        if (root.kdeQueue.some(j => j.args[0] === "dump" && j.real && !j.staging))
             return;
-        root.kdeRun(["dump"], null);
+        root.kdeRun(["dump"], null, true);
+    }
+
+    /// The editor's view: the working copy if there is one.
+    function refreshView(): void {
+        root.kdeRun(["dump"], null, true, true);
     }
 
     function kdeMove(appId: string, toPath: string, fromPaths: var): void {
@@ -382,8 +511,10 @@ Scope {
     }
 
     /// key: Qt key combination as an int, 0 clears.
-    function setShortcut(appId: string, key: int, label: string): void {
-        root.kdeRun(["shortcut", appId, String(key), label], null);
+    function setShortcut(appId: string, key: int, label: string, text: string): void {
+        const p = Object.assign({}, root.pendingShortcuts);
+        p[appId] = { key: key, label: label, text: key ? (text ?? "") : "" };
+        root.pendingShortcuts = p;
     }
 
     function launch(app: var): void {
@@ -459,34 +590,33 @@ Scope {
     Timer {
         interval: 3000
         repeat: true
-        running: root.shellReady && (editorLoader.item?.visible ?? false)
+        running: root.shellReady && root.pageOpen && !root.dirty
         onTriggered: root.kdeRun(["stamp"], res => {
             if (res?.ok && res.stamp !== LauncherCustomizer.kde?.stamp)
                 root.refreshKde();
-        })
+        }, true)
     }
 
     // ============================================================ editor
 
+    /// The editor is a page in Settings: Panels & Interface -> Launcher.
     function openEditor(appId: string): void {
-        editorLoader.active = true;
-        const w = editorLoader.item;
-        if (!w)
-            return;
-        w.visible = true;
-        root.refreshKde();
-        if (appId)
-            w.focusApp(appId);
+        LauncherCustomizer.focusRequest = appId;
+        WindowFactory.create(null, {
+            initialPageIdx: "panels",
+            initialSubPage: "launcherCustomizer"
+        });
+        if (appId) {
+            LauncherCustomizer.focusSerial++;
+            focusClear.restart();
+        }
     }
 
-    LazyLoader {
-        id: editorLoader
+    Timer {
+        id: focusClear
 
-        active: false
-
-        Editor {
-            store: root
-        }
+        interval: 2500
+        onTriggered: LauncherCustomizer.focusRequest = ""
     }
 
     // ========================================================== wiring
@@ -519,14 +649,19 @@ Scope {
             cur.seenSince = Math.round(Date.now() / 1000);
         if (stale.length > 0 || startDots)
             root.write(cur);
+        LauncherCustomizer.editorUrl = Qt.resolvedUrl("EditorView.qml");
+        LauncherCustomizer.store = root;
         LauncherCustomizer.pluginActive = true;
         root.refreshKde();
+        root.refreshView();
     }
 
     Component.onDestruction: {
         Quickshell.execDetached(["rm", "-f", root.pluginDir + "/icon.svg"]);
-        if (root.shellReady)
+        if (root.shellReady) {
             LauncherCustomizer.pluginActive = false;
+            LauncherCustomizer.store = null;
+        }
     }
 
     /// The launcher's custom order after a drag: KDE categories keep it in
@@ -542,7 +677,8 @@ Scope {
             const seq = wanted.concat(direct.filter(id => !wanted.includes(id)));
             let k = 0;
             const tokens = items.map(it => it.kind === "sep" ? "sep" : (it.kind === "menu" ? "menu:" + it.path.split("/").pop() : "app:" + seq[k++]));
-            root.setLayout(categoryId.slice(4), tokens);
+            // The launcher's own drag order is saved right away, not staged.
+            root.kdeRun(["layout", categoryId.slice(4)].concat(tokens), null, true);
         } else {
             root.update(d => {
                 d.order = d.order && typeof d.order === "object" ? d.order : {};
@@ -561,7 +697,7 @@ Scope {
         }
 
         function onPinRequested(categoryId: string, appId: string, on: bool): void {
-            root.pin(categoryId, appId, on);
+            root.pinNow(categoryId, appId, on);
         }
 
         function onSeenRequested(appId: string): void {

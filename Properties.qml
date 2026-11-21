@@ -22,8 +22,41 @@ Item {
     required property var store
 
     readonly property string key: props.editor.focusKey
-    readonly property var app: props.key.startsWith("app:") ? (props.editor.apps[props.key.slice(4)] ?? null) : null
-    readonly property var menuNode: props.key.startsWith("menu:") ? (props.editor.nodes[props.key.slice(5)] ?? null) : null
+    readonly property var liveApp: props.key.startsWith("app:") ? (props.editor.apps[props.key.slice(4)] ?? null) : null
+    readonly property var liveMenu: props.key.startsWith("menu:") ? (props.editor.nodes[props.key.slice(5)] ?? null) : null
+    // While you type in one of the fields, a refresh of the menu does not
+    // touch the form (it would reset what you are typing).
+    readonly property bool typingHere: {
+        const f = props.Window.activeFocusItem;
+        if (!f || f.selectedText === undefined)
+            return false;
+        for (let p = f; p; p = p.parent)
+            if (p === props)
+                return true;
+        return false;
+    }
+    property var app: null
+    property var menuNode: null
+
+    function syncShown(): void {
+        props.app = props.liveApp;
+        props.menuNode = props.liveMenu;
+    }
+
+    onKeyChanged: props.syncShown()
+    onLiveAppChanged: {
+        if (!props.typingHere)
+            props.app = props.liveApp;
+    }
+    onLiveMenuChanged: {
+        if (!props.typingHere)
+            props.menuNode = props.liveMenu;
+    }
+    onTypingHereChanged: {
+        if (!props.typingHere)
+            Qt.callLater(props.syncShown);
+    }
+    Component.onCompleted: props.syncShown()
     readonly property bool isSep: props.key.startsWith("sep:")
 
     // Nothing selected
@@ -393,9 +426,9 @@ Item {
 
             ShortcutField {
                 Layout.fillWidth: true
-                current: af.a?.shortcut ?? ""
-                onCaptured: (key, label) => props.store.setShortcut(af.id_, key, af.a?.name ?? af.id_)
-                onCleared: props.store.setShortcut(af.id_, 0, af.a?.name ?? af.id_)
+                current: props.store.shortcutOf(af.a)
+                onCaptured: (key, label) => props.store.setShortcut(af.id_, key, af.a?.name ?? af.id_, label)
+                onCleared: props.store.setShortcut(af.id_, 0, af.a?.name ?? af.id_, "")
             }
 
             StyledTextField {
@@ -412,10 +445,13 @@ Item {
             }
 
             SwitchRow {
-                visible: !!props.editor.cat
-                text: qsTr("Pin to top of %1").arg(props.editor.nodeName(props.editor.cat))
-                on: LauncherCustomizer.pinnedIn("kde:" + props.editor.cat, af.id_)
-                onToggledTo: v => props.store.pin("kde:" + props.editor.cat, af.id_, v)
+                // The category the app is shown in (its subcategory when unfolded).
+                readonly property string home: props.editor.parentOf(props.key)
+
+                visible: !!home
+                text: qsTr("Pin to top of %1").arg(props.editor.nodeName(home))
+                on: props.store.pinned("kde:" + home, af.id_)
+                onToggledTo: v => props.store.pin("kde:" + home, af.id_, v)
             }
 
             SwitchRow {
@@ -608,7 +644,7 @@ Item {
             RowLayout {
                 id: lookRow
 
-                readonly property var look: LauncherCustomizer.data?.looks?.["kde:" + mf.path] ?? ({})
+                readonly property var look: props.store.cfg.looks?.["kde:" + mf.path] ?? ({})
 
                 Layout.fillWidth: true
                 spacing: Tokens.spacing.medium

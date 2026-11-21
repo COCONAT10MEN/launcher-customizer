@@ -49,6 +49,23 @@ Singleton {
         return map;
     }
 
+    // The plugin's editor, shown as a page in Settings (Panels & Interface ->
+    // Launcher -> Launcher Customizer). Set by the plugin while it runs.
+    property var store: null
+    property url editorUrl: ""
+    // App the editor should show when its page opens (App info).
+    property string focusRequest: ""
+    property int focusSerial: 0
+
+    /// Settings asks before leaving the page with unsaved changes. Returns
+    /// true when it is asking (the navigation then waits for the answer).
+    function blockLeave(proceed: var): bool {
+        if (!root.pluginActive || !root.store || !root.store.pageOpen || !root.store.dirty)
+            return false;
+        root.store.askLeave(proceed);
+        return true;
+    }
+
     signal editRequested(string appId)
     signal reorderRequested(string categoryId, var ids)
     signal pinRequested(string categoryId, string appId, bool pin)

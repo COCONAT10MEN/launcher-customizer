@@ -27,11 +27,12 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "12"
+VERSION = "14"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
     "modules/launcher/services/LauncherCustomizer.qml": os.path.join(HERE, "shell", "LauncherCustomizer.qml"),
+    "modules/nexus/pages/panels/LauncherCustomizerPage.qml": os.path.join(HERE, "shell", "LauncherCustomizerPage.qml"),
 }
 BLOCK_RE = re.compile(
     r"^// " + TAG + r":begin[^\n]*\n.*?^// " + TAG + r":orig ([A-Za-z0-9+/=]*)\n// " + TAG + r":end\n",
@@ -288,8 +289,10 @@ OPS = [
         '                StyledRect {\n'
         '                    z: -1\n'
         '                    visible: root.lcTopLook.enabled && grid.count > 0\n'
-        '                    width: grid.width\n'
-        '                    height: Math.ceil(grid.count / Math.max(1, Math.floor(grid.width / grid.cellWidth))) * grid.cellHeight\n'
+        '                    readonly property int perRow: Math.max(1, Math.floor(grid.width / grid.cellWidth))\n'
+        '\n'
+        '                    width: Math.min(grid.count, perRow) * grid.cellWidth\n'
+        '                    height: Math.ceil(grid.count / perRow) * grid.cellHeight\n'
         '                    radius: Tokens.rounding.large\n'
         '                    color: root.lcTopLook.color\n'
         '                }\n'
@@ -320,11 +323,16 @@ OPS = [
         '                            readonly property int perRow: Math.max(1, Math.floor((grid.width - lcSec.pad * 2 + lcSec.gap) / (lcSec.tileW + lcSec.gap)))\n'
         '                            readonly property int cols: Math.max(1, Math.min(lcSec.perRow, lcSec.modelData.apps.length))\n'
         '\n'
-        '                            width: lcSec.flowing ? Math.max(lcSec.cols * lcSec.tileW + (lcSec.cols - 1) * lcSec.gap, lcHead.implicitWidth) + lcSec.pad * 2 : grid.width\n'
+        '                            // Just big enough for its tiles and title.\n'
+        '                            readonly property int fitW: Math.max(lcSec.cols * lcSec.tileW + (lcSec.cols - 1) * lcSec.gap, lcHead.implicitWidth + (lcSec.flowing ? 0 : Tokens.padding.small * 2)) + lcSec.pad * 2\n'
+        '\n'
+        '                            // Stacked blocks keep a full row each, so the next one starts below.\n'
+        '                            width: lcSec.flowing ? lcSec.fitW : grid.width\n'
         '                            height: lcBody.implicitHeight + lcSec.pad * 2\n'
         '\n'
         '                            StyledRect {\n'
-        '                                anchors.fill: parent\n'
+        '                                width: lcSec.fitW\n'
+        '                                height: parent.height\n'
         '                                visible: lcSec.look.enabled\n'
         '                                radius: Tokens.rounding.large\n'
         '                                color: lcSec.look.color\n'
@@ -335,7 +343,7 @@ OPS = [
         '\n'
         '                                x: lcSec.pad\n'
         '                                y: lcSec.pad\n'
-        '                                width: lcSec.width - lcSec.pad * 2\n'
+        '                                width: lcSec.fitW - lcSec.pad * 2\n'
         '                                spacing: Tokens.spacing.small\n'
         '\n'
         '                                Row {\n'
@@ -478,6 +486,12 @@ OPS = [
         '        cursorShape: moved ? Qt.ClosedHandCursor : Qt.PointingHandCursor\n'
         '\n'
         '        onPressed: mouse => {\n'
+        '            // Leave the heart to the favourite button underneath.\n'
+        '            const h = mapToItem(favIcon, mouse.x, mouse.y);\n'
+        '            if (h.x > -6 && h.y > -6 && h.x < favIcon.width + 6 && h.y < favIcon.height + 6) {\n'
+        '                mouse.accepted = false;\n'
+        '                return;\n'
+        '            }\n'
         '            start = Qt.point(mouse.x, mouse.y);\n'
         '            moved = false;\n'
         '        }\n'
@@ -657,6 +671,74 @@ OPS = [
         '        },\n'
         '        Controls.MenuItem {\n'
         '            text: qsTr("App info")\n',
+    ),
+    (
+        'modules/nexus/NexusState.qml',
+        'import Quickshell.Bluetooth\n',
+        'import Quickshell.Bluetooth\n'
+        'import qs.modules.launcher.services\n',
+    ),
+    (
+        'modules/nexus/NexusState.qml',
+        '    function selectSubCategory(key: string): void {\n',
+        '    function selectSubCategory(key: string): void {\n'
+        '        // Launcher Customizer: ask first when leaving its page with unsaved changes.\n'
+        '        if (LauncherCustomizer.blockLeave(() => selectSubCategory(key)))\n'
+        '            return;\n',
+    ),
+    (
+        'modules/nexus/NexusState.qml',
+        '    function goToPage(pageIdx: int): void {\n',
+        '    function goToPage(pageIdx: int): void {\n'
+        '        if (LauncherCustomizer.blockLeave(() => goToPage(pageIdx)))\n'
+        '            return;\n',
+    ),
+    (
+        'modules/nexus/NexusState.qml',
+        '    function goToSubPage(pageIdx: int, subPageKey: string): void {\n',
+        '    function goToSubPage(pageIdx: int, subPageKey: string): void {\n'
+        '        if (subPageKey !== "launcherCustomizer" && LauncherCustomizer.blockLeave(() => goToSubPage(pageIdx, subPageKey)))\n'
+        '            return;\n',
+    ),
+    (
+        'modules/nexus/NexusState.qml',
+        '    function closeSubPage(): void {\n',
+        '    function closeSubPage(): void {\n'
+        '        if (LauncherCustomizer.blockLeave(() => closeSubPage()))\n'
+        '            return;\n',
+    ),
+    (
+        'modules/nexus/PageCompRegistry.qml',
+        '                component: Component { LauncherPanel {} }\n',
+        '                component: Component { LauncherPanel {} }\n'
+        '\n'
+        '                // Launcher Customizer: the editor, as a page of its own.\n'
+        '                SubPage { key: "launcherCustomizer"; label: qsTr("Launcher Customizer"); keywords: ["categories", "subcategories", "menu editor", "kmenuedit", "pin", "order", "launcher customizer"]; Component { LauncherCustomizerPage {} } }\n',
+    ),
+    (
+        'modules/nexus/pages/panels/LauncherPanel.qml',
+        '        SectionHeader {\n'
+        '            text: qsTr("Display")\n'
+        '        }\n',
+        '        // Launcher Customizer: categories, order and app details.\n'
+        '        SectionHeader {\n'
+        '            visible: LauncherCustomizer.pluginActive\n'
+        '            text: qsTr("Categories & apps")\n'
+        '        }\n'
+        '\n'
+        '        NavRow {\n'
+        '            visible: LauncherCustomizer.pluginActive\n'
+        '            first: true\n'
+        '            last: true\n'
+        '            icon: "dashboard_customize"\n'
+        '            label: qsTr("Launcher Customizer")\n'
+        '            status: qsTr("Categories, subcategories, order, icons and app details")\n'
+        '            onClicked: root.nState.openSubPage("launcherCustomizer")\n'
+        '        }\n'
+        '\n'
+        '        SectionHeader {\n'
+        '            text: qsTr("Display")\n'
+        '        }\n',
     ),
 ]
 

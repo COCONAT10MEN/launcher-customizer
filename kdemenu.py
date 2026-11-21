@@ -51,7 +51,121 @@ OWN_PREFIX = "caelestia-"
 
 # Highest priority first.
 DATA_PRIO = [DATA_HOME] + DATA_DIRS
+REAL_DATA_PRIO = list(DATA_PRIO)
 CONFIG_PRIO = [CONFIG_HOME] + CONFIG_DIRS
+USER_APPS = os.path.join(DATA_HOME, "applications")
+# ------------------------------------------------------------ staging
+# The editor works on a private copy of the user's menu files (LC_STAGE) and
+# only "commit" writes them back, so KDE and the launcher see nothing until
+# the user saves. Without LC_STAGE, or before the first edit, the real files
+# are used.
+
+STAGE = os.environ.get("LC_STAGE") or ""
+STAGE_ACTIVE = False
+REAL_PATHS = {"menu": USER_MENU, "dirs": USER_DIRS, "apps": USER_APPS}
+
+
+def stage_paths(base):
+    return {
+        "menu": os.path.join(base, "config", "menus", "applications-kmenuedit.menu"),
+        "dirs": os.path.join(base, "data", "desktop-directories"),
+        "apps": os.path.join(base, "data", "applications"),
+    }
+
+
+def file_map(paths):
+    """{"menu" | "dirs/<name>" | "apps/<rel>": content hash} for one set of paths."""
+    import hashlib
+
+    def h(path):
+        if os.path.islink(path):
+            return "L:" + os.readlink(path)
+        with open(path, "rb") as f:
+            return hashlib.sha1(f.read()).hexdigest()
+
+    out = {}
+    if os.path.isfile(paths["menu"]):
+        out["menu"] = h(paths["menu"])
+    for key in ("dirs", "apps"):
+        base = paths[key]
+        for root_dir, _subdirs, files in os.walk(base):
+            for name in files:
+                full = os.path.join(root_dir, name)
+                try:
+                    out[key + "/" + os.path.relpath(full, base)] = h(full)
+                except OSError:
+                    pass
+    return out
+
+
+def key_path(paths, key):
+    if key == "menu":
+        return paths["menu"]
+    kind, rel = key.split("/", 1)
+    return os.path.join(paths[kind], rel)
+
+
+def stage_begin():
+    sp = stage_paths(STAGE)
+    os.makedirs(os.path.dirname(sp["menu"]), exist_ok=True)
+    if os.path.isfile(REAL_PATHS["menu"]):
+        shutil.copyfile(REAL_PATHS["menu"], sp["menu"])
+    for key in ("dirs", "apps"):
+        if os.path.isdir(REAL_PATHS[key]):
+            shutil.copytree(REAL_PATHS[key], sp[key], symlinks=True, dirs_exist_ok=True)
+        else:
+            os.makedirs(sp[key], exist_ok=True)
+    with open(os.path.join(STAGE, "manifest.json"), "w") as f:
+        json.dump(file_map(REAL_PATHS), f)
+
+
+def use_stage():
+    global USER_MENU, USER_DIRS, USER_APPS, UNDO_DIR, DATA_PRIO, STAGE_ACTIVE
+    sp = stage_paths(STAGE)
+    USER_MENU, USER_DIRS, USER_APPS = sp["menu"], sp["dirs"], sp["apps"]
+    UNDO_DIR = os.path.join(STAGE, "undo")
+    DATA_PRIO = [os.path.join(STAGE, "data")] + DATA_DIRS
+    STAGE_ACTIVE = True
+
+
+def stage_changes():
+    """Keys that differ between the working copy and the files it was taken from."""
+    try:
+        with open(os.path.join(STAGE, "manifest.json")) as f:
+            before = json.load(f)
+    except (OSError, ValueError):
+        return []
+    now = file_map(stage_paths(STAGE))
+    return sorted(k for k in set(before) | set(now) if before.get(k) != now.get(k))
+
+
+def cmd_commit():
+    """Write the working copy's changes to the real files (undoable as one step)."""
+    if not STAGE or not os.path.isdir(STAGE):
+        return 0
+    changes = stage_changes()
+    sp = stage_paths(STAGE)
+    if changes:
+        snapshot([key_path(REAL_PATHS, k) for k in changes])
+        for k in changes:
+            src, dst = key_path(sp, k), key_path(REAL_PATHS, k)
+            if os.path.lexists(src):
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                if os.path.lexists(dst):
+                    os.unlink(dst)
+                if os.path.islink(src):
+                    os.symlink(os.readlink(src), dst)
+                else:
+                    shutil.copyfile(src, dst)
+            elif os.path.lexists(dst):
+                os.unlink(dst)
+    shutil.rmtree(STAGE, ignore_errors=True)
+    return len(changes)
+
+
+def cmd_discard():
+    if STAGE:
+        shutil.rmtree(STAGE, ignore_errors=True)
 
 
 def locale_keys():
@@ -740,7 +854,7 @@ def split_exec(cmd):
 
 def app_info(app, shortcuts):
     e = app.entry or {}
-    local = os.path.realpath(app.base) == os.path.realpath(os.path.join(DATA_HOME, "applications"))
+    local = os.path.realpath(app.base) == os.path.realpath(USER_APPS)
     system = None
     if local:
         for d in DATA_DIRS:
@@ -871,7 +985,7 @@ def installed_times(paths):
             state[aid] = {"h": h, "t": t}
             changed = True
         out[aid] = t
-    if changed:
+    if changed and not STAGE_ACTIVE:
         _write_json(APP_STATE, state)
     return out
 
@@ -899,6 +1013,8 @@ def dump():
         "hiddenApps": hidden_ids,
         "manualApps": manual_apps(),
         "canUndo": bool(undo_entries()),
+        "staged": STAGE_ACTIVE,
+        "stageDirty": bool(stage_changes()) if STAGE_ACTIVE else False,
         "stamp": stamp(),
     }
 
@@ -1109,7 +1225,7 @@ def all_user_dir_files():
 
 
 def rebuild_kde_cache():
-    if os.environ.get("LAUNCHER_CUSTOMIZER_NO_SYCOCA"):
+    if os.environ.get("LAUNCHER_CUSTOMIZER_NO_SYCOCA") or STAGE_ACTIVE:
         return
     exe = shutil.which("kbuildsycoca6") or shutil.which("kbuildsycoca5")
     if exe:
@@ -1253,7 +1369,6 @@ def cmd_order(paths):
 
 # ------------------------------------------------------------- app entries
 
-USER_APPS = os.path.join(DATA_HOME, "applications")
 APP_KEYS = {
     "name": "Name", "genericName": "GenericName", "comment": "Comment", "keywords": "Keywords",
     "icon": "Icon", "path": "Path", "terminalOptions": "TerminalOptions", "username": "X-KDE-Username",
@@ -1605,7 +1720,7 @@ def cmd_icons():
             theme = v
             break
     themes, queue, seen = [], [theme, "breeze", "hicolor"], set()
-    bases = [os.path.join(HOME, ".icons")] + [os.path.join(d, "icons") for d in DATA_PRIO]
+    bases = [os.path.join(HOME, ".icons")] + [os.path.join(d, "icons") for d in REAL_DATA_PRIO]
     while queue:
         t = queue.pop(0)
         if t in seen:
@@ -1691,6 +1806,28 @@ def main(argv):
         return 2
     cmd, args = argv[1], argv[2:]
     try:
+        if cmd == "commit":
+            n = cmd_commit()
+            rebuild_kde_cache()
+            _dir_cache.clear()
+            out = dump()
+            out["command"] = cmd
+            out["created"] = n
+            print(json.dumps(out))
+            return 0
+        if cmd == "discard":
+            cmd_discard()
+            print(json.dumps(dict(dump(), command=cmd)))
+            return 0
+        if STAGE:
+            reading = cmd in ("dump", "stamp", "icons", "material-svg", "export", "restore-preview", "undo")
+            if not os.path.isdir(STAGE) and not reading:
+                stage_begin()
+            if os.path.isdir(STAGE):
+                use_stage()
+            elif cmd == "undo":
+                print(json.dumps(dict(dump(), command=cmd)))
+                return 0
         if cmd == "dump":
             print(json.dumps(dump()))
             return 0

@@ -14,14 +14,24 @@ import qs.modules.launcher.services
 import "."
 
 // Launcher Customizer: everything KDE's Menu Editor does, synced with KDE.
-FloatingWindow {
+// Shown as a page in Settings (Panels & Interface -> Launcher). Nothing is
+// written until Save; leaving with unsaved changes asks first.
+Item {
     id: win
 
-    required property var store
+    property var store: null
+    // Narrow Settings window: the list and the details take turns.
+    readonly property bool narrow: win.width < 940
+    property bool detailsShown: false
+    // An app to show once the menu is loaded (App info from the launcher).
+    property string appToFocus: ""
 
     // ------------------------------------------------------------- state
 
-    property string cat: ""                 // category open in the middle pane
+    property string cat: ""                 // selected category (any level)
+    // The page in the middle pane: always a top-level category. Subcategories
+    // never get a page of their own; they unfold inside their top-level one.
+    readonly property string page: win.cat.split("/")[0]
     property string active: "list"          // pane keyboard actions apply to: tree | list
     property var picked: ({})               // selected rows in the middle pane
     property string focusKey: ""            // item in the properties pane: app:<id> | menu:<path> | sep:<n>
@@ -37,7 +47,8 @@ FloatingWindow {
     property bool dragging: false
     property bool hoveringEye: false
 
-    readonly property var kd: LauncherCustomizer.kde ?? ({})
+    readonly property var kd: win.store?.view ?? ({})
+    readonly property bool canUndo: !!(win.kd.staged && win.kd.canUndo)
     readonly property var apps: win.kd.apps ?? ({})
     readonly property var nodes: {
         const m = {};
@@ -59,7 +70,7 @@ FloatingWindow {
         }
         return m;
     }
-    readonly property bool typing: !!(win.activeFocusItem && win.activeFocusItem.selectedText !== undefined)
+    readonly property bool typing: !!(win.Window.activeFocusItem && win.Window.activeFocusItem.selectedText !== undefined)
 
     function nodeName(path: string): string {
         return win.nodes[path]?.name ?? path.split("/").pop();
@@ -123,15 +134,22 @@ FloatingWindow {
     }
 
     function openCategory(path: string): void {
+        if (path.split("/")[0] !== win.page)
+            win.swapList();
         const e = Object.assign({}, win.expanded);
+        const o = Object.assign({}, win.listOpen);
         const parts = path.split("/");
         for (let i = 1; i < parts.length; i++)
             e[parts.slice(0, i).join("/")] = true;
+        // A subcategory opens its top-level page, unfolded down to it.
+        for (let i = 2; i <= parts.length; i++)
+            o[parts.slice(0, i).join("/")] = true;
         win.expanded = e;
+        win.listOpen = o;
         win.cat = path;
         win.search = "";
         searchField.text = "";
-        win.picked = ({});
+        win.picked = parts.length > 1 ? { ["menu:" + path]: true } : ({});
         win.focusKey = "menu:" + path;
         win.active = "tree";
     }
@@ -143,12 +161,12 @@ FloatingWindow {
     }
 
     function keyOf(it: var, i: int, parent: string): string {
-        return it.kind === "app" ? "app:" + it.id : (it.kind === "menu" ? "menu:" + it.path : "sep:" + (parent ?? win.cat) + "|" + i);
+        return it.kind === "app" ? "app:" + it.id : (it.kind === "menu" ? "menu:" + it.path : "sep:" + (parent ?? win.page) + "|" + i);
     }
 
     /// The category a selected row sits in (subcategories can be unfolded inline).
     function parentOf(key: string): string {
-        return win.rows.find(r => r.key === key)?.parent ?? win.cat;
+        return win.rows.find(r => r.key === key)?.parent ?? win.page;
     }
 
     function fromsOf(keys: var): var {
@@ -196,7 +214,7 @@ FloatingWindow {
                     walk(it.path, depth + 1);
             }
         };
-        walk(win.cat, 0);
+        walk(win.page, 0);
         return out;
     }
     readonly property var pickedKeys: Object.keys(win.picked).filter(k => win.picked[k])
@@ -313,7 +331,7 @@ FloatingWindow {
         for (const k of keys)
             froms[k] = win.active === "tree" ? "" : win.parentOf(k);
         win.clip = { mode: mode, keys: keys, from: froms };
-        win.toast(mode === "cut" ? qsTr("Cut %n item(s)", "", keys.length) : qsTr("Copied %n item(s)", "", keys.length), false);
+        win.toast(mode === "cut" ? qsTr("Cut %1").arg(win.items(keys.length)) : qsTr("Copied %1").arg(win.items(keys.length)), false);
     }
 
     function paste(): void {
@@ -345,7 +363,7 @@ FloatingWindow {
             }
         }
         if (n > 0)
-            win.toast((copy ? qsTr("Added %n item(s) to %1", "", n) : qsTr("Moved %n item(s) to %1", "", n)).arg(path ? win.nodeName(path) : qsTr("the top level")), true);
+            win.toast((copy ? qsTr("Added %1 to %2") : qsTr("Moved %1 to %2")).arg(win.items(n)).arg(path ? win.nodeName(path) : qsTr("the top level")), true);
     }
 
     function removeSelected(): void {
@@ -367,7 +385,7 @@ FloatingWindow {
             win.store.setLayout(path, win.tokensOf(path).filter((_, i) => !seps[path].includes(i)));
         win.picked = ({});
         win.focusKey = "";
-        win.toast(qsTr("Removed %n item(s)", "", keys.length), true);
+        win.toast(qsTr("Removed %1").arg(win.items(keys.length)), true);
     }
 
     // ------------------------------------------------------- creation
@@ -452,7 +470,7 @@ FloatingWindow {
             const hid = win.store.appHidden(app);
             acts.push({ text: hid ? qsTr("Show") : qsTr("Hide"), icon: hid ? "visibility" : "visibility_off", action: () => win.store.setAppHidden(app, !hid) });
             if (r.parent) {
-                const pinned = LauncherCustomizer.pinnedIn("kde:" + r.parent, app.id);
+                const pinned = win.store.pinned("kde:" + r.parent, app.id);
                 acts.push({ text: pinned ? qsTr("Unpin from top") : qsTr("Pin to top"), icon: "vertical_align_top", action: () => win.store.pin("kde:" + r.parent, app.id, !pinned) });
             }
             acts.push({ text: qsTr("Open containing folder"), icon: "folder_open", action: () => win.store.openFolder(app) });
@@ -528,30 +546,132 @@ FloatingWindow {
         walk(win.kd.categories ?? [], 0);
         catPicker.rows = rows;
         const n = win.selectionKeys().filter(k => k.startsWith("app:")).length;
-        catPicker.open(mode === "move" ? qsTr("Move %n item(s) to", "", n) : qsTr("Also show %n item(s) in", "", n), "", []);
+        catPicker.open(mode === "move" ? qsTr("Move %1 to").arg(win.items(n)) : qsTr("Also show %1 in").arg(win.items(n)), "", []);
     }
 
-    // ---------------------------------------------------------- window
+    // ------------------------------------------------------------ page
 
-    title: qsTr("Launcher Customizer")
-    color: Colours.palette.m3surface
-    implicitWidth: 1360
-    implicitHeight: 860
-    minimumSize.width: 1100
-    minimumSize.height: 640
+    function plural(n: int, one: string, many: string): string {
+        return n === 1 ? one : many.arg(n);
+    }
+
+    function items(n: int): string {
+        return win.plural(n, qsTr("1 item"), qsTr("%1 items"));
+    }
+
+    // Switching tabs or searching swaps the whole list: no row animations then
+    // (half-finished ones could leave a row behind).
+    property bool switching: false
+
+    onPageChanged: win.swapList()
+    onSearchChanged: win.swapList()
+
+    function swapList(): void {
+        win.switching = true;
+        switchTimer.restart();
+    }
+
+    Timer {
+        id: switchTimer
+
+        interval: 450
+        onTriggered: win.switching = false
+    }
+
+    // Top-level categories: the tabs along the top.
+    readonly property var tabs: (win.kd.rootItems ?? []).filter(it => it.kind === "menu" && win.menuVisible(it.path)).map(it => win.nodes[it.path]).filter(Boolean)
 
     onTreeRowsChanged: {
         if (win.cat && !win.nodes[win.cat])
             win.cat = "";
-        if (!win.cat && win.treeRows.length > 0 && !win.search)
-            win.cat = win.treeRows[0].path;
+        if (!win.cat && win.tabs.length > 0 && !win.search)
+            win.cat = win.tabs[0].path;
+        if (win.appToFocus && win.membership[win.appToFocus]) {
+            const id = win.appToFocus;
+            win.appToFocus = "";
+            win.focusApp(id);
+        }
     }
 
+    function takeFocusRequest(): void {
+        // Not cleared here: Settings may rebuild this page right after, and
+        // the new one needs it too. The plugin clears it shortly.
+        const id = LauncherCustomizer.focusRequest;
+        if (!id)
+            return;
+        if (win.membership[id])
+            win.focusApp(id);
+        else
+            win.appToFocus = id;
+    }
+
+    Component.onCompleted: {
+        if (win.store) {
+            win.store.pageOpen = true;
+            win.store.refreshView();
+        }
+        // After the list has built itself, or a tab switch in the same
+        // instant can leave a row of the first tab behind.
+        focusLater.start();
+    }
+
+    Timer {
+        id: focusLater
+
+        interval: 150
+        onTriggered: win.takeFocusRequest()
+    }
+
+    Component.onDestruction: {
+        if (win.store)
+            win.store.pageOpen = false;
+    }
+
+    Connections {
+        function onFocusSerialChanged(): void {
+            win.takeFocusRequest();
+        }
+
+        target: LauncherCustomizer
+    }
+
+    // Settings asks before leaving with unsaved changes.
+    Connections {
+        function onLeaveRequested(proceed: var): void {
+            leaveDlg.proceed = proceed;
+            leaveDlg.shown = true;
+        }
+
+        target: win.store
+    }
+
+    // App info from the launcher: the app's top-level page, its subcategory
+    // unfolded, the app selected.
     function focusApp(appId: string): void {
         const m = win.membership[appId] ?? [];
         if (m.length > 0)
             win.openCategory(m[0]);
         win.select("app:" + appId, 0);
+        win.scrollToKey("app:" + appId);
+    }
+
+    function scrollToKey(key: string): void {
+        scrollTimer.key = key;
+        scrollTimer.restart();
+    }
+
+    // Owned by the page, so it never fires after Settings has closed it.
+    Timer {
+        id: scrollTimer
+
+        property string key: ""
+
+        interval: 1
+        onTriggered: {
+            const i = win.rows.findIndex(r => r.key === scrollTimer.key);
+            if (i >= 0)
+                list.positionViewAtIndex(i, ListView.Contain);
+        }
     }
 
     Shortcut {
@@ -565,15 +685,20 @@ FloatingWindow {
                 catPicker.close();
             else if (confirm.shown)
                 confirm.shown = false;
+            else if (settingsDlg.shown)
+                settingsDlg.close();
+            else if (leaveDlg.shown)
+                leaveDlg.shown = false;
             else if (win.search) {
                 searchField.text = "";
                 win.search = "";
-            } else
-                win.visible = false;
+            } else if (win.narrow && win.detailsShown)
+                win.detailsShown = false;
         }
     }
     Shortcut { sequences: [StandardKey.Find]; onActivated: searchField.forceActiveFocus() }
-    Shortcut { sequences: [StandardKey.Undo]; enabled: !win.typing; onActivated: win.store.kdeUndo() }
+    Shortcut { sequences: [StandardKey.Undo]; enabled: !win.typing && win.canUndo; onActivated: win.store.kdeUndo() }
+    Shortcut { sequences: [StandardKey.Save]; enabled: win.store?.dirty ?? false; onActivated: win.store.save(null) }
     Shortcut { sequence: "Ctrl+N"; onActivated: win.newLauncher() }
     Shortcut { sequence: "Ctrl+Shift+N"; onActivated: win.newCategory(false) }
     Shortcut { sequences: [StandardKey.Cut]; enabled: !win.typing; onActivated: win.cutCopy("cut") }
@@ -599,21 +724,13 @@ FloatingWindow {
             // ------------------------------------------------------ header
             RowLayout {
                 Layout.fillWidth: true
-                spacing: Tokens.spacing.medium
-
-                StyledText {
-                    text: qsTr("Launcher Customizer")
-                    font: Tokens.font.title.large
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                }
+                spacing: Tokens.spacing.small
 
                 StyledTextField {
                     id: searchField
 
-                    Layout.preferredWidth: 360
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: 420
                     leadingIcon: "search"
                     placeholderText: qsTr("Search apps")
                     onTextChanged: {
@@ -622,21 +739,34 @@ FloatingWindow {
                     }
                 }
 
-                StyledText {
-                    text: qsTr("Show hidden")
-                    color: Colours.palette.m3onSurfaceVariant
-                    font: Tokens.font.label.large
+                Item {
+                    Layout.fillWidth: true
                 }
 
-                StyledSwitch {
-                    checked: win.showHidden
-                    onToggled: win.showHidden = checked
+                TextButton {
+                    id: newBtn
+
+                    text: qsTr("New")
+                    type: TextButton.Tonal
+                    onClicked: {
+                        const p = newBtn.mapToItem(rootItem, 0, newBtn.height + 4);
+                        win.newMenu(p.x, p.y);
+                    }
+                }
+
+                IconButton {
+                    icon: win.showHidden ? "visibility" : "visibility_off"
+                    type: win.showHidden ? IconButton.Filled : IconButton.Tonal
+                    onClicked: win.showHidden = !win.showHidden
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: win.showHidden ? qsTr("Hide hidden entries") : qsTr("Show hidden entries")
                 }
 
                 IconButton {
                     icon: "undo"
                     type: IconButton.Tonal
-                    disabled: !(win.kd.canUndo ?? false)
+                    disabled: !win.canUndo
                     onClicked: win.store.kdeUndo()
                     ToolTip.visible: hovered
                     ToolTip.delay: 600
@@ -652,6 +782,17 @@ FloatingWindow {
                     ToolTip.text: qsTr("Launcher settings")
                 }
 
+                // Nothing is written until this is pressed.
+                TextButton {
+                    text: win.store?.saving ? qsTr("Saving…") : qsTr("Save")
+                    type: TextButton.Filled
+                    disabled: !(win.store?.dirty ?? false) || (win.store?.saving ?? false)
+                    onClicked: win.store.save(null)
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: (win.store?.dirty ?? false) ? qsTr("Save changes (Ctrl+S)") : qsTr("No unsaved changes")
+                }
+
                 IconButton {
                     id: moreBtn
 
@@ -664,267 +805,102 @@ FloatingWindow {
                 }
             }
 
+            // ------------------------------------------------- category tabs
+            // Top-level categories only: subcategories unfold inside them.
+            ListView {
+                id: tabStrip
+
+                Layout.fillWidth: true
+                implicitHeight: 44
+                orientation: ListView.Horizontal
+                spacing: Tokens.spacing.small
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: win.tabs
+
+                delegate: StyledRect {
+                    id: tab
+
+                    required property var modelData
+                    readonly property bool sel: !win.search && win.page === tab.modelData.path
+                    readonly property var ic: LauncherCustomizer.kdeIcon(tab.modelData)
+
+                    implicitWidth: tabRow.implicitWidth + Tokens.padding.medium * 2
+                    implicitHeight: 40
+                    radius: Tokens.rounding.full
+                    color: tabDrop.containsDrag ? Colours.palette.m3primaryContainer : (tab.sel ? Colours.palette.m3secondaryContainer : (tabMouse.containsMouse ? Colours.palette.m3surfaceContainerHigh : Colours.palette.m3surfaceContainer))
+                    opacity: tab.modelData.hidden ? 0.55 : 1
+
+                    Behavior on color {
+                        CAnim {}
+                    }
+
+                    DropArea {
+                        id: tabDrop
+
+                        anchors.fill: parent
+                        keys: ["lc-items"]
+                        onDropped: drop => {
+                            win.dropInto(tab.modelData.path, ghost.keys, (drop.modifiers & Qt.ControlModifier) !== 0, win.fromsOf(ghost.keys));
+                            drop.accept();
+                        }
+                    }
+
+                    MouseArea {
+                        id: tabMouse
+
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: mouse => {
+                            win.openCategory(tab.modelData.path);
+                            win.detailsShown = false;
+                            if (mouse.button === Qt.RightButton) {
+                                const p = mapToItem(rootItem, mouse.x, mouse.y);
+                                win.treeMenu(tab.modelData.path, p.x, p.y);
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        id: tabRow
+
+                        anchors.centerIn: parent
+                        spacing: Tokens.spacing.small
+
+                        CategoryIcon {
+                            icon: tab.ic.icon
+                            iconSource: tab.ic.iconSource
+                            size: 20
+                            color: tab.sel ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurfaceVariant
+                        }
+
+                        StyledText {
+                            text: tab.modelData.name
+                            color: tab.sel ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+                            font: Tokens.font.label.large
+                        }
+
+                        StyledText {
+                            visible: tab.modelData.allApps.length > 0
+                            text: String(tab.modelData.allApps.length)
+                            color: tab.sel ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurfaceVariant
+                            font: Tokens.font.label.medium
+                        }
+                    }
+                }
+            }
+
             // ------------------------------------------------------- panes
             RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 spacing: Tokens.spacing.medium
 
-                // ============================================== tree
-                StyledRect {
-                    Layout.preferredWidth: 290
-                    Layout.fillHeight: true
-                    radius: Tokens.rounding.large
-                    color: Colours.palette.m3surfaceContainer
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: Tokens.padding.medium
-                        spacing: Tokens.spacing.small
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Tokens.spacing.small
-
-                            TextButton {
-                                id: newBtn
-
-                                Layout.fillWidth: true
-                                text: qsTr("New")
-                                onClicked: {
-                                    const p = newBtn.mapToItem(rootItem, 0, newBtn.height + 4);
-                                    win.newMenu(p.x, p.y);
-                                }
-                            }
-
-                            IconButton {
-                                icon: "arrow_upward"
-                                type: IconButton.Text
-                                disabled: !win.cat
-                                onClicked: {
-                                    win.active = "tree";
-                                    win.moveRow(-1);
-                                }
-                            }
-
-                            IconButton {
-                                icon: "arrow_downward"
-                                type: IconButton.Text
-                                disabled: !win.cat
-                                onClicked: {
-                                    win.active = "tree";
-                                    win.moveRow(1);
-                                }
-                            }
-                        }
-
-                        ListView {
-                            id: tree
-
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            clip: true
-                            spacing: 2
-                            boundsBehavior: Flickable.StopAtBounds
-                            model: ScriptModel {
-                                values: win.treeRows
-                                objectProp: "key"
-                            }
-                            ScrollBar.vertical: StyledScrollBar {
-                                flickable: tree
-                            }
-
-                            // Material 3 Expressive: rows unfold with a spatial spring,
-                            // colour and opacity follow the effects curve.
-                            add: Transition {
-                                Anim {
-                                    property: "opacity"
-                                    from: 0
-                                    to: 1
-                                    type: Anim.DefaultEffects
-                                }
-                                Anim {
-                                    property: "x"
-                                    from: -16
-                                    to: 0
-                                    type: Anim.DefaultSpatial
-                                }
-                            }
-                            remove: Transition {
-                                Anim {
-                                    property: "opacity"
-                                    to: 0
-                                    type: Anim.FastEffects
-                                }
-                            }
-                            displaced: Transition {
-                                Anim {
-                                    properties: "x,y"
-                                    type: Anim.DefaultSpatial
-                                }
-                                Anim {
-                                    property: "opacity"
-                                    to: 1
-                                    type: Anim.FastEffects
-                                }
-                            }
-
-                            delegate: StyledRect {
-                                id: tRow
-
-                                required property var modelData
-                                readonly property bool isMenu: modelData.kind === "menu"
-                                readonly property var n: isMenu ? win.nodes[modelData.path] : null
-                                readonly property var app: isMenu ? null : win.apps[modelData.id]
-                                readonly property string itemKey: isMenu ? "menu:" + modelData.path : "app:" + modelData.id
-                                readonly property bool open: isMenu && !!win.expanded[modelData.path]
-                                readonly property bool sel: !win.search && (isMenu ? (win.cat === modelData.path && !win.focusKey.startsWith("app:")) : (win.cat === modelData.parent && win.focusKey === itemKey))
-                                readonly property bool isHidden: isMenu ? !!n?.hidden : win.store.appHidden(app)
-                                readonly property var ic: n ? LauncherCustomizer.kdeIcon(n) : ({ icon: "", iconSource: "" })
-
-                                width: tree.width
-                                implicitHeight: isMenu ? 40 : 36
-                                radius: Tokens.rounding.medium
-                                color: tDrop.containsDrag && isMenu ? Colours.palette.m3primaryContainer : (sel ? Colours.palette.m3secondaryContainer : (tMouse.containsMouse ? Colours.palette.m3surfaceContainerHigh : Qt.alpha(Colours.palette.m3surfaceContainerHigh, 0)))
-                                opacity: isHidden ? 0.55 : 1
-
-                                Behavior on color {
-                                    CAnim {}
-                                }
-
-                                Behavior on opacity {
-                                    Anim {
-                                        type: Anim.DefaultEffects
-                                    }
-                                }
-
-                                DropArea {
-                                    id: tDrop
-
-                                    anchors.fill: parent
-                                    enabled: tRow.isMenu
-                                    keys: ["lc-items"]
-                                    onDropped: drop => {
-                                        win.dropInto(tRow.modelData.path, ghost.keys, (drop.modifiers & Qt.ControlModifier) !== 0, win.fromsOf(ghost.keys));
-                                        drop.accept();
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: tMouse
-
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                    onClicked: mouse => {
-                                        const p = mapToItem(rootItem, mouse.x, mouse.y);
-                                        if (tRow.isMenu) {
-                                            if (mouse.button === Qt.RightButton)
-                                                win.treeMenu(tRow.modelData.path, p.x, p.y);
-                                            else
-                                                win.openCategory(tRow.modelData.path);
-                                        } else {
-                                            if (win.cat !== tRow.modelData.parent)
-                                                win.openCategory(tRow.modelData.parent);
-                                            win.select(tRow.itemKey, 0);
-                                            if (mouse.button === Qt.RightButton) {
-                                                const r = win.rows.find(x => x.key === tRow.itemKey);
-                                                if (r)
-                                                    win.rowMenu(r, p.x, p.y);
-                                            }
-                                        }
-                                    }
-                                    onDoubleClicked: {
-                                        if (tRow.isMenu)
-                                            win.toggleExpand(tRow.modelData.path);
-                                        else
-                                            win.focusName = true;
-                                    }
-                                }
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 4 + tRow.modelData.depth * 18
-                                    anchors.rightMargin: Tokens.padding.small
-                                    spacing: Tokens.spacing.small
-
-                                    // Unfold arrow: rotates with a fast spatial spring.
-                                    Item {
-                                        implicitWidth: 22
-                                        implicitHeight: 22
-
-                                        MaterialIcon {
-                                            anchors.centerIn: parent
-                                            text: "chevron_right"
-                                            visible: tRow.isMenu && win.hasContent(tRow.modelData.path)
-                                            rotation: tRow.open ? 90 : 0
-                                            color: Colours.palette.m3onSurfaceVariant
-                                            fontStyle: Tokens.font.icon.small
-
-                                            Behavior on rotation {
-                                                Anim {
-                                                    type: Anim.FastSpatial
-                                                }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            anchors.margins: -4
-                                            enabled: tRow.isMenu && win.hasContent(tRow.modelData.path)
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: win.toggleExpand(tRow.modelData.path)
-                                        }
-                                    }
-
-                                    CategoryIcon {
-                                        visible: tRow.isMenu
-                                        icon: tRow.ic.icon
-                                        iconSource: tRow.ic.iconSource
-                                        size: 20
-                                        color: tRow.sel ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurfaceVariant
-                                    }
-
-                                    IconImage {
-                                        visible: !tRow.isMenu
-                                        implicitSize: 20
-                                        asynchronous: true
-                                        source: tRow.app ? (LauncherCustomizer.imageFor(tRow.app.icon) || Quickshell.iconPath("application-x-executable")) : ""
-                                    }
-
-                                    StyledText {
-                                        Layout.fillWidth: true
-                                        text: tRow.isMenu ? (tRow.n?.name ?? "") : (tRow.app?.name ?? "")
-                                        elide: Text.ElideRight
-                                        color: tRow.sel ? Colours.palette.m3onSecondaryContainer : (tRow.isMenu ? Colours.palette.m3onSurface : Colours.palette.m3onSurfaceVariant)
-                                        font: tRow.isMenu ? Tokens.font.label.large : Tokens.font.body.medium
-                                    }
-
-                                    // Quick hide: shows on hover, stays visible while hidden.
-                                    IconButton {
-                                        icon: tRow.isHidden ? "visibility_off" : "visibility"
-                                        type: IconButton.Text
-                                        visible: tMouse.containsMouse || tRow.isHidden || hovered
-                                        onClicked: win.toggleHidden(tRow.itemKey)
-                                        ToolTip.visible: hovered
-                                        ToolTip.delay: 600
-                                        ToolTip.text: tRow.isHidden ? qsTr("Show") : qsTr("Hide")
-                                    }
-
-                                    StyledText {
-                                        visible: tRow.isMenu && !tMouse.containsMouse && !tRow.isHidden && (tRow.n?.allApps.length ?? 0) > 0 && !win.hoveringEye
-                                        text: String(tRow.n?.allApps.length ?? 0)
-                                        color: Colours.palette.m3onSurfaceVariant
-                                        font: Tokens.font.label.medium
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // ============================================== contents
                 StyledRect {
+                    visible: !win.narrow || !win.detailsShown
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.preferredWidth: 1
@@ -943,7 +919,7 @@ FloatingWindow {
 
                             StyledText {
                                 Layout.fillWidth: true
-                                text: win.search ? qsTr("Results") : (win.cat ? win.nodeName(win.cat) : qsTr("Menu"))
+                                text: win.search ? qsTr("Results") : (win.page ? win.nodeName(win.page) : qsTr("Menu"))
                                 elide: Text.ElideRight
                                 font: Tokens.font.title.medium
                             }
@@ -1029,6 +1005,8 @@ FloatingWindow {
                             }
 
                             add: Transition {
+                                enabled: !win.switching
+
                                 Anim {
                                     property: "opacity"
                                     from: 0
@@ -1043,6 +1021,8 @@ FloatingWindow {
                                 }
                             }
                             remove: Transition {
+                                enabled: !win.switching
+
                                 Anim {
                                     property: "opacity"
                                     to: 0
@@ -1055,6 +1035,8 @@ FloatingWindow {
                                 }
                             }
                             displaced: Transition {
+                                enabled: !win.switching
+
                                 Anim {
                                     property: "y"
                                     type: Anim.DefaultSpatial
@@ -1151,6 +1133,8 @@ FloatingWindow {
                                             win.rowMenu(row.modelData, p.x, p.y);
                                         } else {
                                             win.select(row.modelData.key, mouse.modifiers);
+                                            if (!(mouse.modifiers & (Qt.ControlModifier | Qt.ShiftModifier)))
+                                                win.detailsShown = true;
                                         }
                                     }
                                     onDoubleClicked: {
@@ -1258,7 +1242,7 @@ FloatingWindow {
                                             Layout.fillWidth: true
                                             text: {
                                                 if (row.kind === "menu")
-                                                    return qsTr("%n app(s)", "", row.menuNode?.allApps.length ?? 0);
+                                                    return win.plural(row.menuNode?.allApps.length ?? 0, qsTr("1 app"), qsTr("%1 apps"));
                                                 if (win.search)
                                                     return (win.membership[row.modelData.id] ?? []).map(p => win.nodeName(p)).join(" · ") || qsTr("Lost & Found");
                                                 return row.app?.genericName || row.app?.comment || "";
@@ -1271,13 +1255,13 @@ FloatingWindow {
                                     }
 
                                     Chip {
-                                        visible: !!row.app?.shortcut
-                                        text: row.app?.shortcut ?? ""
+                                        visible: !!win.store.shortcutOf(row.app)
+                                        text: win.store.shortcutOf(row.app)
                                         icon: "keyboard"
                                     }
 
                                     Chip {
-                                        visible: row.kind === "app" && !!row.modelData.parent && LauncherCustomizer.pinnedIn("kde:" + row.modelData.parent, row.modelData.id)
+                                        visible: row.kind === "app" && !!row.modelData.parent && win.store.pinned("kde:" + row.modelData.parent, row.modelData.id)
                                         text: qsTr("Pinned")
                                         icon: "vertical_align_top"
                                     }
@@ -1317,14 +1301,31 @@ FloatingWindow {
                 }
 
                 // ============================================== properties
+                // Beside the list, or in its place on a narrow window.
                 StyledRect {
-                    Layout.preferredWidth: 420
+                    visible: !win.narrow || win.detailsShown
+                    Layout.preferredWidth: win.narrow ? -1 : 400
+                    Layout.fillWidth: win.narrow
                     Layout.fillHeight: true
                     radius: Tokens.rounding.large
                     color: Colours.palette.m3surfaceContainer
 
+                    IconButton {
+                        id: detailsBack
+
+                        visible: win.narrow
+                        z: 5
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.margins: Tokens.padding.small
+                        icon: "arrow_back"
+                        type: IconButton.Text
+                        onClicked: win.detailsShown = false
+                    }
+
                     Properties {
                         anchors.fill: parent
+                        anchors.topMargin: win.narrow ? detailsBack.height + Tokens.padding.small : 0
                         editor: win
                         store: win.store
                     }
@@ -1475,7 +1476,7 @@ FloatingWindow {
 
                     StyledText {
                         Layout.fillWidth: true
-                        text: qsTr("Removes your custom categories, launchers and changes (%n file(s)). You can still undo it.", "", confirm.count)
+                        text: qsTr("Removes your custom categories, launchers and changes (%1). You can still undo it.").arg(win.plural(confirm.count, qsTr("1 file"), qsTr("%1 files")))
                         wrapMode: Text.WordWrap
                         color: Colours.palette.m3onSurfaceVariant
                     }
@@ -1498,6 +1499,114 @@ FloatingWindow {
                                 win.focusKey = "";
                                 win.toast(qsTr("System menu restored"), true);
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Leaving the page with unsaved changes.
+        Item {
+            id: leaveDlg
+
+            property bool shown: false
+            property var proceed: null
+
+            function finish(): void {
+                const go = leaveDlg.proceed;
+                leaveDlg.shown = false;
+                leaveDlg.proceed = null;
+                if (go)
+                    go();
+            }
+
+            anchors.fill: parent
+            z: 120
+            visible: leaveDlg.shown || leaveScrim.opacity > 0
+
+            Rectangle {
+                id: leaveScrim
+
+                anchors.fill: parent
+                color: Qt.alpha(Colours.palette.m3scrim, 0.45)
+                opacity: leaveDlg.shown ? 1 : 0
+
+                Behavior on opacity {
+                    Anim {
+                        type: Anim.DefaultEffects
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: leaveDlg.shown
+                    onClicked: leaveDlg.shown = false
+                }
+            }
+
+            StyledRect {
+                anchors.centerIn: parent
+                width: Math.min(parent.width - 48, 440)
+                height: leaveCol.implicitHeight + Tokens.padding.large * 2
+                radius: Tokens.rounding.extraLarge
+                color: Colours.palette.m3surfaceContainerHigh
+                opacity: leaveDlg.shown ? 1 : 0
+                scale: leaveDlg.shown ? 1 : 0.92
+
+                Behavior on opacity {
+                    Anim {
+                        type: Anim.DefaultEffects
+                    }
+                }
+
+                Behavior on scale {
+                    Anim {
+                        type: Anim.DefaultSpatial
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                }
+
+                ColumnLayout {
+                    id: leaveCol
+
+                    anchors.fill: parent
+                    anchors.margins: Tokens.padding.large
+                    spacing: Tokens.spacing.medium
+
+                    StyledText {
+                        text: qsTr("Save your changes?")
+                        font: Tokens.font.title.medium
+                    }
+
+                    StyledText {
+                        Layout.fillWidth: true
+                        text: qsTr("Your launcher changes haven't been saved yet.")
+                        wrapMode: Text.WordWrap
+                        color: Colours.palette.m3onSurfaceVariant
+                    }
+
+                    RowLayout {
+                        Layout.alignment: Qt.AlignRight
+                        spacing: Tokens.spacing.small
+
+                        TextButton {
+                            text: qsTr("Cancel")
+                            type: TextButton.Text
+                            onClicked: leaveDlg.shown = false
+                        }
+
+                        TextButton {
+                            text: qsTr("Don't save")
+                            type: TextButton.Tonal
+                            onClicked: win.store.discard(() => leaveDlg.finish())
+                        }
+
+                        TextButton {
+                            text: qsTr("Save")
+                            onClicked: win.store.save(() => leaveDlg.finish())
                         }
                     }
                 }
@@ -1555,7 +1664,7 @@ FloatingWindow {
     /// Background colour of a launcher category ("kde:<path>").
     function pickColor(categoryId: string, name: string): void {
         colorPicker.target = categoryId;
-        colorPicker.open(qsTr("Background for %1").arg(name), LauncherCustomizer.data?.looks?.[categoryId]?.color ?? "");
+        colorPicker.open(qsTr("Background for %1").arg(name), win.store.cfg.looks?.[categoryId]?.color ?? "");
     }
 
     function pickIcon(key: string, kind: string): void {
