@@ -13,7 +13,7 @@ import qs.services
 import qs.modules.launcher.services
 import "."
 
-// Properties of the selected launcher, category or separator. Every field
+// Properties of the selected launcher or category. Every field
 // saves when you leave it; toggles save at once.
 Item {
     id: props
@@ -57,12 +57,11 @@ Item {
             Qt.callLater(props.syncShown);
     }
     Component.onCompleted: props.syncShown()
-    readonly property bool isSep: props.key.startsWith("sep:")
 
     // Nothing selected
     ColumnLayout {
         anchors.centerIn: parent
-        visible: !props.app && !props.menuNode && !props.isSep
+        visible: !props.app && !props.menuNode
         spacing: Tokens.spacing.small
 
         MaterialIcon {
@@ -99,44 +98,6 @@ Item {
 
             anchors.fill: parent
             sourceComponent: menuFormComp
-        }
-    }
-
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: Tokens.padding.large
-        visible: props.isSep
-        spacing: Tokens.spacing.medium
-
-        StyledText {
-            text: qsTr("Separator")
-            font: Tokens.font.title.medium
-        }
-
-        RowLayout {
-            spacing: Tokens.spacing.small
-
-            TextButton {
-                text: qsTr("Move up")
-                type: TextButton.Tonal
-                onClicked: props.editor.moveRow(-1)
-            }
-
-            TextButton {
-                text: qsTr("Move down")
-                type: TextButton.Tonal
-                onClicked: props.editor.moveRow(1)
-            }
-
-            TextButton {
-                text: qsTr("Remove")
-                type: TextButton.Tonal
-                onClicked: props.editor.removeSelected()
-            }
-        }
-
-        Item {
-            Layout.fillHeight: true
         }
     }
 

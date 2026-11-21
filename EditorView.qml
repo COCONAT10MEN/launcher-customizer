@@ -205,6 +205,9 @@ Item {
             const items = win.itemsOf(path);
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
+                // KDE's separators are kept in its files but not shown here.
+                if (it.kind === "sep")
+                    continue;
                 if (it.kind === "app" && !win.appVisible(it.id))
                     continue;
                 if (it.kind === "menu" && !win.menuVisible(it.path))
@@ -304,21 +307,6 @@ Item {
         const before = target < 0 ? rest.length : rest.indexOf(t[target]);
         rest.splice(before < 0 ? rest.length : before, 0, ...take);
         win.store.setLayout(parent, rest);
-    }
-
-    function addSeparator(): void {
-        if (!win.cat && win.active !== "tree")
-            return;
-        const r = win.rows.find(r => r.key === win.focusKey);
-        const path = r ? r.parent : win.cat;
-        const t = win.tokensOf(path);
-        t.splice(r ? r.index + 1 : t.length, 0, "sep");
-        win.store.setLayout(path, t);
-        win.toast(r ? qsTr("Separator added below %1").arg(win.rowName(r)) : qsTr("Separator added to %1").arg(win.nodeName(path)), true);
-    }
-
-    function rowName(r: var): string {
-        return r.kind === "app" ? (win.apps[r.id]?.name ?? r.id) : (r.kind === "menu" ? win.nodeName(r.path) : qsTr("the separator"));
     }
 
     // --------------------------------------------- clipboard, remove, dnd
@@ -493,7 +481,6 @@ Item {
         if (!win.search && !many) {
             acts.push({ text: qsTr("Move up"), icon: "arrow_upward", shortcut: "Alt+Up", action: () => win.moveRow(-1) });
             acts.push({ text: qsTr("Move down"), icon: "arrow_downward", shortcut: "Alt+Down", action: () => win.moveRow(1) });
-            acts.push({ text: qsTr("Add separator below"), icon: "horizontal_rule", action: () => win.addSeparator() });
         }
         if (app && !many) {
             acts.push({ separator: true });
@@ -540,8 +527,7 @@ Item {
         popup.open(x, y, [
             { text: qsTr("New launcher"), icon: "add_box", shortcut: "Ctrl+N", action: () => win.newLauncher() },
             { text: qsTr("New category"), icon: "create_new_folder", shortcut: "Ctrl+Shift+N", action: () => win.newCategory(false) },
-            { text: qsTr("New subcategory"), icon: "subdirectory_arrow_right", enabled: !!win.cat, action: () => win.newCategory(true) },
-            { text: qsTr("New separator"), icon: "horizontal_rule", enabled: !win.search, action: () => win.addSeparator() }
+            { text: qsTr("New subcategory"), icon: "subdirectory_arrow_right", enabled: !!win.cat, action: () => win.newCategory(true) }
         ]);
     }
 

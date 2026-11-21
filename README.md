@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.3.3-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.3.4-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -30,7 +30,7 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
   reorder, hide and delete them. Give each one an icon from ~3,800 Material Symbols, your
   icon theme, or any SVG or PNG.
 - **Every app exactly where you want it.** Move apps between categories, show one app in
-  several, drag and drop, select many at once, add separators, set your own order, or
+  several, drag and drop, select many at once, set your own order, or
   sort with one click.
 - **Subcategories as sections.** Open a category in the launcher and its subcategories
   appear inside it as their own titled sections, right below the category's own apps. No
@@ -123,7 +123,7 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 | Save your changes | *Save* (the split button with *⋮*) · `Ctrl+S` |
 | Switch category | the tabs along the top (drag, or scroll with the mouse wheel); subcategories unfold inside their category |
 | Rename a category, change its icon or comment | the pencil next to its name above the list |
-| Add a launcher, category, subcategory or separator | *New* button or right-click · `Ctrl+N`, `Ctrl+Shift+N`. New launchers and subcategories go into the category you are in, new categories become the last tab, and a separator goes below the selected item (separators show in KDE's own app menu) |
+| Add a launcher, category or subcategory | *New* button or right-click · `Ctrl+N`, `Ctrl+Shift+N`. New launchers and subcategories go into the category you are in, new categories become the last tab |
 | Move, copy or remove apps | toolbar or right-click · `Ctrl+X` `Ctrl+C` `Ctrl+V` `Del` · drag onto a category tab or subcategory |
 | Change the order | arrows or right-click · `Alt+Up` `Alt+Down` · drag within the list · or drag tiles in the launcher with *Custom* sort |
 | Sort a category, or everything | sort button · right-click a category · *⋮* menu |
@@ -164,7 +164,7 @@ writes them, and rebuilds KDE's menu cache:
 
 | Change | KDE file |
 | --- | --- |
-| Moving, adding, removing apps; categories; order and separators | `~/.config/menus/applications-kmenuedit.menu` |
+| Moving, adding, removing apps; categories; order | `~/.config/menus/applications-kmenuedit.menu` |
 | Category name, comment, icon, hidden | `~/.local/share/desktop-directories/*.directory` |
 | Launcher fields | a local copy in `~/.local/share/applications/` |
 | Shortcuts | KDE's global shortcut service |
@@ -222,7 +222,7 @@ other edit it applies when you press *Save*:
 ```
 main.qml              plugin entry: KDE sync, unsaved changes, saving, patching
 EditorView.qml        the editor page: category tabs, contents, Save
-Properties.qml        properties of the selected launcher, category or separator
+Properties.qml        properties of the selected launcher or category
 LauncherSettings.qml  layout, icon style, new-app dots, backup
 CategoryColorPicker.qml  colour picker for category backgrounds
 MenuPopup.qml         right-click and toolbar menus
