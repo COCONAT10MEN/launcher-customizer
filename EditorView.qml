@@ -314,6 +314,11 @@ Item {
         const t = win.tokensOf(path);
         t.splice(r ? r.index + 1 : t.length, 0, "sep");
         win.store.setLayout(path, t);
+        win.toast(r ? qsTr("Separator added below %1").arg(win.rowName(r)) : qsTr("Separator added to %1").arg(win.nodeName(path)), true);
+    }
+
+    function rowName(r: var): string {
+        return r.kind === "app" ? (win.apps[r.id]?.name ?? r.id) : (r.kind === "menu" ? win.nodeName(r.path) : qsTr("the separator"));
     }
 
     // --------------------------------------------- clipboard, remove, dnd
@@ -392,32 +397,56 @@ Item {
     // ------------------------------------------------------- creation
 
     function newLauncher(): void {
-        win.store.appNew(qsTr("New launcher"), win.cat, id => {
-            win.pendingFocus = "app:" + id;
+        const where = win.cat;
+        win.store.appNew(qsTr("New launcher"), where, id => {
+            win.revealNew("app:" + id);
+            win.toast(where ? qsTr("New launcher added to %1: name it and set its program").arg(win.nodeName(where)) : qsTr("New launcher added: name it and set its program"), true);
         });
     }
 
     function newCategory(inside: bool): void {
         const parent = inside ? win.cat : "";
         win.store.menuNew(qsTr("New category"), "folder", parent, path => {
-            win.pendingFocus = "menu:" + path;
+            win.revealNew("menu:" + path);
+            win.toast(parent ? qsTr("New subcategory added to %1").arg(win.nodeName(parent)) : qsTr("New category added as the last tab"), true);
         });
     }
 
-    Connections {
-        function onKdeChanged(): void {
+    /// Called once the menu with the new item is loaded.
+    function revealNew(key: string): void {
+        win.pendingFocus = key;
+        revealTimer.restart();
+    }
+
+    Timer {
+        id: revealTimer
+
+        interval: 1
+        onTriggered: {
             if (!win.pendingFocus)
                 return;
             const key = win.pendingFocus;
             win.pendingFocus = "";
-            if (key.startsWith("menu:"))
+            // Show what was made: selected, in view, its details open with the
+            // name ready to type.
+            if (key.startsWith("menu:")) {
                 win.openCategory(key.slice(5));
-            else
+                win.focusKey = key;
+            } else {
                 win.select(key, 0);
-            win.focusName = true;
+            }
+            win.scrollToKey(key);
+            win.detailsShown = true;
+            // Once the details have slid in (focus cannot go to a hidden field).
+            nameFocusTimer.restart();
         }
+    }
 
-        target: win.store
+    Timer {
+        id: nameFocusTimer
+
+        interval: 450
+        onTriggered: win.focusName = true
     }
 
     // ---------------------------------------------------------- toast
@@ -1039,14 +1068,18 @@ Item {
                 /// Bring a tab fully into view.
                 function reveal(path: string): void {
                     const i = win.tabs.findIndex(t => t.path === path);
-                    const item = i >= 0 ? tabStrip.itemAtIndex(i) : null;
-                    if (!item)
+                    if (i < 0)
                         return;
+                    // Tabs off screen are not built yet: let the list work out
+                    // where the tab is, then glide there from where we were.
+                    tabGlide.stop();
+                    const before = tabStrip.contentX;
+                    tabStrip.positionViewAtIndex(i, ListView.Contain);
                     const pad = Tokens.padding.large;
-                    if (item.x < tabStrip.contentX + pad)
-                        tabStrip.glideTo(item.x - pad);
-                    else if (item.x + item.width > tabStrip.contentX + tabStrip.width - pad)
-                        tabStrip.glideTo(item.x + item.width - tabStrip.width + pad);
+                    const target = tabStrip.contentX + (tabStrip.contentX > before ? pad : tabStrip.contentX < before ? -pad : 0);
+                    tabStrip.contentX = before;
+                    if (Math.abs(target - before) > 1)
+                        tabStrip.glideTo(target);
                 }
 
                 Anim {
@@ -1270,6 +1303,31 @@ Item {
                                 type: IconButton.Text
                                 disabled: !win.clip || !!win.search
                                 onClicked: win.paste()
+                            }
+                        }
+
+                        // Nothing in this category yet.
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.topMargin: Tokens.padding.extraLarge
+                            visible: win.ready && !win.search && win.rows.length === 0 && !!win.page
+                            spacing: Tokens.spacing.small
+
+                            MaterialIcon {
+                                Layout.alignment: Qt.AlignHCenter
+                                text: "inventory_2"
+                                color: Colours.palette.m3outline
+                                fontStyle: Tokens.font.icon.large
+                            }
+
+                            StyledText {
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.maximumWidth: list.width - Tokens.padding.large * 2
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+                                text: qsTr("Empty for now. Drag apps onto this tab, use Move to… on an app, or add a launcher with New.")
+                                color: Colours.palette.m3onSurfaceVariant
+                                font: Tokens.font.body.medium
                             }
                         }
 

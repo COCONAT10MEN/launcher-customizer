@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.3.2-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.3.3-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -123,7 +123,7 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 | Save your changes | *Save* (the split button with *⋮*) · `Ctrl+S` |
 | Switch category | the tabs along the top (drag, or scroll with the mouse wheel); subcategories unfold inside their category |
 | Rename a category, change its icon or comment | the pencil next to its name above the list |
-| Add a launcher, category, subcategory or separator | *New* button or right-click · `Ctrl+N`, `Ctrl+Shift+N` |
+| Add a launcher, category, subcategory or separator | *New* button or right-click · `Ctrl+N`, `Ctrl+Shift+N`. New launchers and subcategories go into the category you are in, new categories become the last tab, and a separator goes below the selected item (separators show in KDE's own app menu) |
 | Move, copy or remove apps | toolbar or right-click · `Ctrl+X` `Ctrl+C` `Ctrl+V` `Del` · drag onto a category tab or subcategory |
 | Change the order | arrows or right-click · `Alt+Up` `Alt+Down` · drag within the list · or drag tiles in the launcher with *Custom* sort |
 | Sort a category, or everything | sort button · right-click a category · *⋮* menu |

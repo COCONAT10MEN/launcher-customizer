@@ -316,6 +316,12 @@ def scan_app_dir(base):
 # ------------------------------------------------------------------ menu tree
 
 def locate_menu_file(name, current_dir=None):
+    # The user's menu file is wherever USER_MENU points: the working copy
+    # while editing, so the menu shows unsaved changes too.
+    if os.path.basename(name) == os.path.basename(USER_MENU):
+        if os.path.isabs(name) and os.path.realpath(name) != os.path.realpath(REAL_PATHS["menu"]):
+            return name if os.path.exists(name) else None
+        return USER_MENU if os.path.exists(USER_MENU) else None
     if os.path.isabs(name):
         return name if os.path.exists(name) else None
     # KDE looks relative names up in the menus/ config dirs, user first.
@@ -1331,6 +1337,17 @@ def cmd_new(name, icon, parent=""):
     um = user_menu(tree, path)
     if um.find("Directory") is None:
         ET.SubElement(um, "Directory").text = dirname
+    # A parent with its own order lists it last among its categories, not
+    # wherever that order merges in the ones it does not name.
+    holder_el = user_menu(tree, parent, create=False) if parent else tree
+    lay = holder_el.find("Layout") if holder_el is not None else None
+    if lay is not None:
+        kids = list(lay)
+        names = [i for i, c in enumerate(kids) if c.tag == "Menuname"]
+        at = names[-1] + 1 if names else next((i + 1 for i, c in enumerate(kids) if c.tag == "Merge" and c.get("type") == "menus"), len(kids))
+        el = ET.Element("Menuname")
+        el.text = leaf
+        lay.insert(at, el)
     save_user_tree(tree)
     write_keyfile(os.path.join(USER_DIRS, dirname), {"Type": "Directory", "Name": base, "Icon": icon or "folder"})
     return path
