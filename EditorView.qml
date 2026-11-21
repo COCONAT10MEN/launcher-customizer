@@ -9,6 +9,7 @@ import Quickshell.Widgets
 import Caelestia.Config
 import qs.components
 import qs.components.controls
+import qs.components.containers
 import qs.services
 import qs.modules.launcher.services
 import "."
@@ -563,8 +564,135 @@ Item {
     // (half-finished ones could leave a row behind).
     property bool switching: false
 
-    onPageChanged: win.swapList()
-    onSearchChanged: win.swapList()
+    onSearchChanged: {
+        win.swapList();
+        win.slideListIn(0);
+    }
+
+    // Switching tabs: the list slides in from the side of the new tab, the
+    // way Settings switches its pages.
+    property string lastPage: ""
+    readonly property int movement: Tokens.padding.extraExtraLarge * 2
+
+    onPageChanged: {
+        win.swapList();
+        const from = win.tabs.findIndex(t => t.path === win.lastPage);
+        const to = win.tabs.findIndex(t => t.path === win.page);
+        if (win.lastPage && from >= 0 && to >= 0 && from !== to)
+            win.slideListIn(to > from ? 1 : -1);
+        win.lastPage = win.page;
+        Qt.callLater(() => tabStrip.reveal(win.page));
+    }
+
+    function slideListIn(dir: int): void {
+        if (!win.ready)
+            return;
+        listIn.stop();
+        listShift.x = dir * win.movement / 2;
+        list.opacity = 0;
+        listIn.start();
+    }
+
+    ParallelAnimation {
+        id: listIn
+
+        Anim {
+            target: list
+            property: "opacity"
+            to: 1
+            type: Anim.SlowEffects
+        }
+        Anim {
+            target: listShift
+            property: "x"
+            to: 0
+            type: Anim.SlowEffects
+        }
+    }
+
+    // Narrow window: the details push in over the list and pop back out,
+    // like a Settings sub-page.
+    function settlePanes(): void {
+        pushDetails.stop();
+        popDetails.stop();
+        listPane.shift = 0;
+        propsPane.shift = 0;
+        listPane.fade = !win.narrow || !win.detailsShown ? 1 : 0;
+        propsPane.fade = !win.narrow || win.detailsShown ? 1 : 0;
+    }
+
+    onNarrowChanged: win.settlePanes()
+    onDetailsShownChanged: {
+        if (!win.narrow) {
+            win.settlePanes();
+            return;
+        }
+        pushDetails.stop();
+        popDetails.stop();
+        (win.detailsShown ? pushDetails : popDetails).start();
+    }
+
+    SequentialAnimation {
+        id: pushDetails
+
+        Anim {
+            target: listPane
+            property: "fade"
+            to: 0
+            type: Anim.DefaultEffects
+        }
+        PropertyAction {
+            target: propsPane
+            property: "shift"
+            value: win.movement
+        }
+        ParallelAnimation {
+            Anim {
+                target: propsPane
+                property: "fade"
+                from: 0
+                to: 1
+                type: Anim.SlowEffects
+            }
+            Anim {
+                target: propsPane
+                property: "shift"
+                to: 0
+                type: Anim.SlowEffects
+            }
+        }
+    }
+
+    SequentialAnimation {
+        id: popDetails
+
+        Anim {
+            target: propsPane
+            property: "fade"
+            to: 0
+            type: Anim.DefaultEffects
+        }
+        PropertyAction {
+            target: listPane
+            property: "shift"
+            value: -win.movement
+        }
+        ParallelAnimation {
+            Anim {
+                target: listPane
+                property: "fade"
+                from: 0
+                to: 1
+                type: Anim.SlowEffects
+            }
+            Anim {
+                target: listPane
+                property: "shift"
+                to: 0
+                type: Anim.SlowEffects
+            }
+        }
+    }
 
     function swapList(): void {
         win.switching = true;
@@ -606,6 +734,7 @@ Item {
     }
 
     Component.onCompleted: {
+        win.settlePanes();
         if (win.store) {
             win.store.pageOpen = true;
             win.store.refreshView();
@@ -842,6 +971,7 @@ Item {
                             StyledText {
                                 Layout.alignment: Qt.AlignVCenter
                                 text: saveSplit.busy ? qsTr("Saving…") : qsTr("Save")
+                                animate: true
                                 color: saveSplit.ink
                                 font: Tokens.font.label.large
                             }
@@ -887,7 +1017,7 @@ Item {
 
             // ------------------------------------------------- category tabs
             // Top-level categories only: subcategories unfold inside them.
-            ListView {
+            StyledListView {
                 id: tabStrip
 
                 Layout.fillWidth: true
@@ -898,14 +1028,43 @@ Item {
                 boundsBehavior: Flickable.StopAtBounds
                 model: win.tabs
 
+                // Glides to a position instead of jumping there.
+                function glideTo(x: real): void {
+                    const max = tabStrip.originX + Math.max(0, tabStrip.contentWidth - tabStrip.width);
+                    tabGlide.stop();
+                    tabGlide.to = Math.max(tabStrip.originX, Math.min(max, x));
+                    tabGlide.start();
+                }
+
+                /// Bring a tab fully into view.
+                function reveal(path: string): void {
+                    const i = win.tabs.findIndex(t => t.path === path);
+                    const item = i >= 0 ? tabStrip.itemAtIndex(i) : null;
+                    if (!item)
+                        return;
+                    const pad = Tokens.padding.large;
+                    if (item.x < tabStrip.contentX + pad)
+                        tabStrip.glideTo(item.x - pad);
+                    else if (item.x + item.width > tabStrip.contentX + tabStrip.width - pad)
+                        tabStrip.glideTo(item.x + item.width - tabStrip.width + pad);
+                }
+
+                Anim {
+                    id: tabGlide
+
+                    target: tabStrip
+                    property: "contentX"
+                    type: Anim.DefaultSpatial
+                }
+
                 // A mouse wheel (with or without Shift) scrolls the tabs sideways.
                 WheelHandler {
                     target: null
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                     onWheel: event => {
                         const d = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y;
-                        const max = tabStrip.originX + Math.max(0, tabStrip.contentWidth - tabStrip.width);
-                        tabStrip.contentX = Math.max(tabStrip.originX, Math.min(max, tabStrip.contentX - d));
+                        const from = tabGlide.running ? tabGlide.to : tabStrip.contentX;
+                        tabStrip.glideTo(from - d * 1.2);
                     }
                 }
 
@@ -984,17 +1143,29 @@ Item {
             }
 
             // ------------------------------------------------------- panes
-            RowLayout {
+            // Side by side, or on a narrow window one at a time, moving like
+            // Settings' own pages.
+            Item {
+                id: panes
+
+                readonly property int gap: Tokens.spacing.medium
+                readonly property int propsW: 400
+
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: Tokens.spacing.medium
 
                 // ============================================== contents
                 StyledRect {
-                    visible: !win.narrow || !win.detailsShown
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.preferredWidth: 1
+                    id: listPane
+
+                    property real fade: 1
+                    property real shift: 0
+
+                    x: listPane.shift
+                    width: win.narrow ? panes.width : panes.width - panes.propsW - panes.gap
+                    height: panes.height
+                    opacity: listPane.fade
+                    visible: listPane.opacity > 0
                     radius: Tokens.rounding.large
                     color: Colours.palette.m3surfaceContainer
 
@@ -1011,6 +1182,7 @@ Item {
                             StyledText {
                                 Layout.fillWidth: !editCatBtn.visible
                                 text: win.search ? qsTr("Results") : (win.page ? win.nodeName(win.page) : qsTr("Menu"))
+                                animate: true
                                 elide: Text.ElideRight
                                 font: Tokens.font.title.medium
                             }
@@ -1101,8 +1273,12 @@ Item {
                             }
                         }
 
-                        ListView {
+                        StyledListView {
                             id: list
+
+                            transform: Translate {
+                                id: listShift
+                            }
 
                             Layout.fillWidth: true
                             Layout.fillHeight: true
@@ -1416,10 +1592,16 @@ Item {
                 // ============================================== properties
                 // Beside the list, or in its place on a narrow window.
                 StyledRect {
-                    visible: !win.narrow || win.detailsShown
-                    Layout.preferredWidth: win.narrow ? -1 : 400
-                    Layout.fillWidth: win.narrow
-                    Layout.fillHeight: true
+                    id: propsPane
+
+                    property real fade: 1
+                    property real shift: 0
+
+                    x: (win.narrow ? 0 : panes.width - panes.propsW) + propsPane.shift
+                    width: win.narrow ? panes.width : panes.propsW
+                    height: panes.height
+                    opacity: propsPane.fade
+                    visible: propsPane.opacity > 0
                     radius: Tokens.rounding.large
                     color: Colours.palette.m3surfaceContainer
 
