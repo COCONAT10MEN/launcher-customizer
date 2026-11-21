@@ -67,7 +67,7 @@ FloatingWindow {
 
     function appVisible(id: string): bool {
         const a = win.apps[id];
-        return !!a && (win.showHidden || !a.noDisplay);
+        return !!a && (win.showHidden || !win.store.appHidden(a));
     }
 
     function menuVisible(path: string): bool {
@@ -114,7 +114,7 @@ FloatingWindow {
         if (key.startsWith("app:")) {
             const a = win.apps[key.slice(4)];
             if (a)
-                win.store.appSet(a.id, { noDisplay: !a.noDisplay });
+                win.store.setAppHidden(a, !win.store.appHidden(a));
         } else if (key.startsWith("menu:")) {
             const n = win.nodes[key.slice(5)];
             if (n)
@@ -449,7 +449,12 @@ FloatingWindow {
         }
         if (app && !many) {
             acts.push({ separator: true });
-            acts.push({ text: app.noDisplay ? qsTr("Show") : qsTr("Hide"), icon: app.noDisplay ? "visibility" : "visibility_off", action: () => win.store.appSet(app.id, { noDisplay: !app.noDisplay }) });
+            const hid = win.store.appHidden(app);
+            acts.push({ text: hid ? qsTr("Show") : qsTr("Hide"), icon: hid ? "visibility" : "visibility_off", action: () => win.store.setAppHidden(app, !hid) });
+            if (r.parent) {
+                const pinned = LauncherCustomizer.pinnedIn("kde:" + r.parent, app.id);
+                acts.push({ text: pinned ? qsTr("Unpin from top") : qsTr("Pin to top"), icon: "vertical_align_top", action: () => win.store.pin("kde:" + r.parent, app.id, !pinned) });
+            }
             acts.push({ text: qsTr("Open containing folder"), icon: "folder_open", action: () => win.store.openFolder(app) });
             acts.push({ text: qsTr("Copy location"), icon: "link", action: () => win.store.copyLocation(app) });
             acts.push({ text: qsTr("Restore to default"), icon: "settings_backup_restore", visible: app.local && app.hasSystem, action: () => win.store.appReset(app.id) });
@@ -497,8 +502,8 @@ FloatingWindow {
             { text: qsTr("Sort all by name"), icon: "sort_by_alpha", action: () => win.store.sort("", "name", true) },
             { text: qsTr("Sort all by description"), icon: "sort", action: () => win.store.sort("", "description", true) },
             { separator: true },
-            { text: qsTr("Launcher icons: Material"), icon: LauncherCustomizer.iconStyle === "material" ? "radio_button_checked" : "radio_button_unchecked", action: () => win.store.setIconStyle("material") },
-            { text: qsTr("Launcher icons: icon theme"), icon: LauncherCustomizer.iconStyle === "theme" ? "radio_button_checked" : "radio_button_unchecked", action: () => win.store.setIconStyle("theme") },
+            { text: qsTr("Export layout…"), icon: "upload", action: () => win.store.exportLayout() },
+            { text: qsTr("Import layout…"), icon: "download", action: () => win.store.importLayout() },
             { separator: true },
             { text: qsTr("Open KDE Menu Editor"), icon: "open_in_new", action: () => win.store.openKMenuEdit() },
             { text: qsTr("Restore to system menu…"), icon: "restart_alt", danger: true, action: () => win.store.restorePreview(files => {
@@ -639,6 +644,15 @@ FloatingWindow {
                 }
 
                 IconButton {
+                    icon: "tune"
+                    type: IconButton.Tonal
+                    onClicked: settingsDlg.open()
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: qsTr("Launcher settings")
+                }
+
+                IconButton {
                     id: moreBtn
 
                     icon: "more_vert"
@@ -765,7 +779,7 @@ FloatingWindow {
                                 readonly property string itemKey: isMenu ? "menu:" + modelData.path : "app:" + modelData.id
                                 readonly property bool open: isMenu && !!win.expanded[modelData.path]
                                 readonly property bool sel: !win.search && (isMenu ? (win.cat === modelData.path && !win.focusKey.startsWith("app:")) : (win.cat === modelData.parent && win.focusKey === itemKey))
-                                readonly property bool isHidden: isMenu ? !!n?.hidden : !!app?.noDisplay
+                                readonly property bool isHidden: isMenu ? !!n?.hidden : win.store.appHidden(app)
                                 readonly property var ic: n ? LauncherCustomizer.kdeIcon(n) : ({ icon: "", iconSource: "" })
 
                                 width: tree.width
@@ -1079,7 +1093,7 @@ FloatingWindow {
                                 implicitHeight: kind === "sep" ? 22 : 54
                                 radius: Tokens.rounding.medium
                                 color: rDrop.containsDrag && kind === "menu" ? Colours.palette.m3primaryContainer : (sel ? Colours.palette.m3secondaryContainer : (rMouse.containsMouse ? Colours.palette.m3surfaceContainerHigh : Qt.alpha(Colours.palette.m3surfaceContainerHigh, 0)))
-                                opacity: (row.app?.noDisplay || row.menuNode?.hidden) ? 0.55 : 1
+                                opacity: (win.store.appHidden(row.app) || row.menuNode?.hidden) ? 0.55 : 1
 
                                 Behavior on color {
                                     CAnim {}
@@ -1263,7 +1277,19 @@ FloatingWindow {
                                     }
 
                                     Chip {
-                                        visible: !!(row.app?.noDisplay || row.menuNode?.hidden)
+                                        visible: row.kind === "app" && !!row.modelData.parent && LauncherCustomizer.pinnedIn("kde:" + row.modelData.parent, row.modelData.id)
+                                        text: qsTr("Pinned")
+                                        icon: "vertical_align_top"
+                                    }
+
+                                    Chip {
+                                        visible: row.kind === "app" && LauncherCustomizer.isNew(row.modelData.id)
+                                        text: qsTr("New")
+                                        icon: "new_releases"
+                                    }
+
+                                    Chip {
+                                        visible: !!(win.store.appHidden(row.app) || row.menuNode?.hidden)
                                         text: qsTr("Hidden")
                                         icon: "visibility_off"
                                     }
@@ -1276,13 +1302,13 @@ FloatingWindow {
 
                                     // Quick hide, like in the tree.
                                     IconButton {
-                                        icon: (row.app?.noDisplay || row.menuNode?.hidden) ? "visibility_off" : "visibility"
+                                        icon: (win.store.appHidden(row.app) || row.menuNode?.hidden) ? "visibility_off" : "visibility"
                                         type: IconButton.Text
                                         visible: row.kind !== "sep" && (rMouse.containsMouse || hovered)
                                         onClicked: win.toggleHidden(row.modelData.key)
                                         ToolTip.visible: hovered
                                         ToolTip.delay: 600
-                                        ToolTip.text: (row.app?.noDisplay || row.menuNode?.hidden) ? qsTr("Show") : qsTr("Hide")
+                                        ToolTip.text: (win.store.appHidden(row.app) || row.menuNode?.hidden) ? qsTr("Show") : qsTr("Hide")
                                     }
                                 }
                             }
@@ -1482,6 +1508,23 @@ FloatingWindow {
             id: popup
         }
 
+        LauncherSettings {
+            id: settingsDlg
+
+            store: win.store
+        }
+
+        CategoryColorPicker {
+            id: colorPicker
+
+            property string target: ""
+
+            onPicked: hex => {
+                colorPicker.close();
+                win.store.setLook(colorPicker.target, { enabled: true, color: hex });
+            }
+        }
+
         CategoryPicker {
             id: catPicker
 
@@ -1507,6 +1550,12 @@ FloatingWindow {
                     win.store.kdeSetIcon(iconPicker.target.slice(5), choice);
             }
         }
+    }
+
+    /// Background colour of a launcher category ("kde:<path>").
+    function pickColor(categoryId: string, name: string): void {
+        colorPicker.target = categoryId;
+        colorPicker.open(qsTr("Background for %1").arg(name), LauncherCustomizer.data?.looks?.[categoryId]?.color ?? "");
     }
 
     function pickIcon(key: string, kind: string): void {

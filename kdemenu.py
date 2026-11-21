@@ -777,7 +777,103 @@ def app_info(app, shortcuts):
         "hasSystem": system is not None,
         "created": truthy(e.get("X-Caelestia-Created")),
         "shortcut": shortcuts.get(strip_id(app.id), ""),
+        # An edited copy keeps the original's date: editing is not an update.
+        "installed": 0,
+        "_timePath": system if (local and system) else app.path,
     }
+
+
+APP_STATE = os.path.join(CACHE_HOME, "caelestia", "launcher-customizer", "apps.json")
+PACMAN_LOCAL = "/var/lib/pacman/local"
+PACMAN_STATE = os.path.join(CACHE_HOME, "caelestia", "launcher-customizer", "pacman.json")
+
+
+def _read_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _write_json(path, data):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def pacman_dates():
+    """desktop file -> when its package was installed or last upgraded (pacman)."""
+    try:
+        mtime = os.stat(PACMAN_LOCAL).st_mtime
+    except OSError:
+        return {}
+    cached = _read_json(PACMAN_STATE)
+    if cached and cached.get("mtime") == mtime:
+        return cached.get("files", {})
+    out = {}
+    for pkg in os.listdir(PACMAN_LOCAL):
+        d = os.path.join(PACMAN_LOCAL, pkg)
+        try:
+            with open(os.path.join(d, "files"), encoding="utf-8", errors="replace") as f:
+                files = [l for l in f.read().splitlines() if l.endswith(".desktop") and "/applications/" in l]
+            if not files:
+                continue
+            with open(os.path.join(d, "desc"), encoding="utf-8", errors="replace") as f:
+                m = re.search(r"%INSTALLDATE%\n(\d+)", f.read())
+        except OSError:
+            continue
+        t = int(m.group(1)) if m else 0
+        for rel in files:
+            out["/" + rel] = t
+    _write_json(PACMAN_STATE, {"mtime": mtime, "files": out})
+    return out
+
+
+def installed_times(paths):
+    """app id -> when it was installed or last updated (seconds since the epoch).
+
+    Packages report their real install or upgrade date and Flatpaks their
+    deploy date. Anything else counts as updated only when its desktop file's
+    content changes: Waydroid and browser web apps rewrite theirs on every
+    start without anything new in them."""
+    import hashlib
+    pac = pacman_dates()
+    state = _read_json(APP_STATE) or {}
+    now = int(time.time())
+    out, changed = {}, False
+    for aid, path in paths.items():
+        real = os.path.realpath(path)
+        if real in pac or path in pac:
+            out[aid] = pac.get(real) or pac.get(path)
+            continue
+        if "/flatpak/" in real and "/export/" in real:
+            try:
+                out[aid] = int(os.stat(real.split("/export/")[0]).st_mtime)
+                continue
+            except OSError:
+                pass
+        try:
+            with open(path, "rb") as f:
+                h = hashlib.sha1(f.read()).hexdigest()
+            seed = int(os.stat(path).st_mtime)
+        except OSError:
+            out[aid] = 0
+            continue
+        rec = state.get(aid)
+        t = seed if rec is None else (rec["t"] if rec.get("h") == h else now)
+        if rec != {"h": h, "t": t}:
+            state[aid] = {"h": h, "t": t}
+            changed = True
+        out[aid] = t
+    if changed:
+        _write_json(APP_STATE, state)
+    return out
 
 
 def dump():
@@ -790,6 +886,9 @@ def dump():
     cats = [node(x, system_paths, pool) for x in order if not x.deleted and not x.name.startswith(".")]
     shortcuts = read_shortcuts()
     apps = {strip_id(aid): app_info(a, shortcuts) for aid, a in pool.items() if (a.entry or {}).get("Type", "Application") == "Application" and a.showable}
+    times = installed_times({k: v.pop("_timePath") for k, v in apps.items()})
+    for k, v in apps.items():
+        v["installed"] = times.get(k, 0)
     return {
         "ok": True,
         "rootFile": root_file,
@@ -1357,6 +1456,147 @@ def cmd_shortcut(app_id, key, label):
     subprocess.run(base + ["setForeignShortcut", "asai"] + action + keys, check=True, capture_output=True, timeout=5)
 
 
+
+# ------------------------------------------------------- backup and share
+
+import tarfile
+import io
+import datetime
+
+LAYOUT_FORMAT = "caelestia-launcher-layout"
+PLUGIN_CONFIG = os.path.join(CONFIG_HOME, "caelestia", "launcher-customizer.json")
+ICON_DIR = os.path.join(DATA_HOME, "caelestia", "category-icons")
+QT_MODS = {"meta": 0x10000000, "ctrl": 0x04000000, "alt": 0x08000000, "shift": 0x02000000}
+QT_KEYS = {"space": 0x20, "return": 0x01000004, "enter": 0x01000005, "tab": 0x01000001, "backspace": 0x01000003,
+           "del": 0x01000007, "delete": 0x01000007, "ins": 0x01000006, "home": 0x01000010, "end": 0x01000011,
+           "pgup": 0x01000016, "pgdown": 0x01000017, "left": 0x01000012, "up": 0x01000013, "right": 0x01000014,
+           "down": 0x01000015, "print": 0x01000009, "esc": 0x01000000}
+
+
+def shortcut_to_int(text):
+    parts = text.split("+")
+    key, mods = parts[-1], parts[:-1]
+    if text.endswith("++"):
+        key, mods = "+", parts[:-2]
+    v = 0
+    for m in mods:
+        v |= QT_MODS.get(m.strip().lower(), 0)
+    k = key.strip()
+    if k.lower() in QT_KEYS:
+        v |= QT_KEYS[k.lower()]
+    elif re.fullmatch(r"[Ff]([1-9]|[12][0-9]|3[0-5])", k):
+        v |= 0x01000030 + int(k[1:]) - 1
+    elif len(k) == 1:
+        v |= ord(k.upper())
+    else:
+        return 0
+    return v
+
+
+def layout_files():
+    """Every file that makes up the user's launcher layout."""
+    files = []
+    if os.path.exists(USER_MENU):
+        files.append(USER_MENU)
+    files += sorted(glob.glob(os.path.join(USER_DIRS, "*.directory")))
+    for p in sorted(glob.glob(os.path.join(USER_APPS, "*.desktop"))):
+        e = read_keyfile(p)
+        if truthy(e.get("X-Caelestia-Edited")) or truthy(e.get("X-Caelestia-Created")):
+            files.append(p)
+    files += sorted(glob.glob(os.path.join(ICON_DIR, "*")))
+    return files
+
+
+def tokenise(path):
+    for tok, base in (("{config}", CONFIG_HOME), ("{data}", DATA_HOME)):
+        if path.startswith(base + os.sep):
+            return tok + path[len(base):]
+    return None
+
+
+def detokenise(path):
+    return path.replace("{config}", CONFIG_HOME, 1).replace("{data}", DATA_HOME, 1)
+
+
+def cmd_export(out, hidden_json="[]"):
+    shortcuts = {}
+    sc = read_shortcuts()
+    apps = all_apps_pool()
+    for aid in apps:
+        sid = strip_id(aid)
+        if sc.get(sid):
+            shortcuts[aid] = sc[sid].split(", ")[0]
+    plugin = {}
+    try:
+        with open(PLUGIN_CONFIG) as fh:
+            plugin = json.load(fh)
+        plugin.pop("seen", None)
+        plugin.pop("seenSince", None)
+    except (OSError, ValueError):
+        pass
+    manifest = {"format": LAYOUT_FORMAT, "version": 1, "created": datetime.datetime.now().isoformat(timespec="seconds"),
+                "home": HOME, "files": [], "shortcuts": shortcuts, "plugin": plugin,
+                "hiddenApps": [x for x in json.loads(hidden_json or "[]") if isinstance(x, str)]}
+    with tarfile.open(out, "w:gz") as tar:
+        for i, f in enumerate(layout_files()):
+            tok = tokenise(f)
+            if not tok:
+                continue
+            arc = f"files/{i}"
+            tar.add(f, arcname=arc)
+            manifest["files"].append({"arc": arc, "target": tok})
+        data = json.dumps(manifest, indent=2).encode()
+        info = tarfile.TarInfo("manifest.json")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+    return {"ok": True, "path": out, "files": len(manifest["files"]), "shortcuts": len(shortcuts)}
+
+
+def read_layout(path):
+    tar = tarfile.open(path, "r:gz")
+    manifest = json.load(tar.extractfile("manifest.json"))
+    if manifest.get("format") != LAYOUT_FORMAT:
+        raise RuntimeError("not a Launcher Customizer layout file")
+    return tar, manifest
+
+
+def import_targets(manifest):
+    out = []
+    for f in manifest.get("files", []):
+        t = f.get("target", "")
+        if not (t.startswith("{config}/") or t.startswith("{data}/")) or ".." in t.split("/"):
+            raise RuntimeError(f"unsafe path in layout: {t}")
+        out.append(detokenise(t))
+    return out
+
+
+def cmd_import(path):
+    tar, manifest = read_layout(path)
+    targets = import_targets(manifest)
+    cmd_restore()
+    old_home = manifest.get("home", "")
+    for f, target in zip(manifest.get("files", []), targets):
+        data = tar.extractfile(f["arc"]).read()
+        if old_home and old_home != HOME:
+            try:
+                data = data.decode("utf-8").replace(old_home, HOME).encode("utf-8")
+            except UnicodeDecodeError:
+                pass
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "wb") as fh:
+            fh.write(data)
+    applied = 0
+    for aid, text in manifest.get("shortcuts", {}).items():
+        key = shortcut_to_int(text)
+        if key:
+            try:
+                cmd_shortcut(aid, key, strip_id(aid))
+                applied += 1
+            except Exception:
+                pass
+    return {"plugin": manifest.get("plugin", {}), "hiddenApps": manifest.get("hiddenApps", []),
+            "shortcuts": applied, "files": len(targets)}
+
 def cmd_icons():
     theme = "hicolor"
     for d in CONFIG_PRIO:
@@ -1463,6 +1703,9 @@ def main(argv):
         if cmd == "material-svg":
             print(json.dumps(cmd_material_svg(args[0], args[1])))
             return 0
+        if cmd == "export":
+            print(json.dumps(cmd_export(args[0], args[1] if len(args) > 1 else "[]")))
+            return 0
         if cmd == "restore-preview":
             print(json.dumps({"ok": True, "files": restore_targets()}))
             return 0
@@ -1477,6 +1720,9 @@ def main(argv):
                 extra.append(os.path.join(USER_APPS, fid(args[0])))
             if cmd == "restore-system":
                 extra += restore_targets()
+            if cmd == "import":
+                _tar, _man = read_layout(args[0])
+                extra += restore_targets() + import_targets(_man)
             snapshot([USER_MENU] + all_user_dir_files() + extra)
             kv = lambda rest: dict(a.split("=", 1) for a in rest if "=" in a)
             if cmd == "move":
@@ -1513,6 +1759,8 @@ def main(argv):
                 cmd_app_delete(args[0])
             elif cmd == "restore-system":
                 cmd_restore()
+            elif cmd == "import":
+                result = cmd_import(args[0])
             elif cmd == "menu-move":
                 result = cmd_menu_move(args[0], args[1] if len(args) > 1 else "")
             else:

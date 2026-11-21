@@ -407,8 +407,15 @@ Item {
 
             SwitchRow {
                 text: qsTr("Hidden")
-                on: af.a?.noDisplay ?? false
-                onToggledTo: v => af.save("noDisplay", v)
+                on: props.store.appHidden(af.a)
+                onToggledTo: v => props.store.setAppHidden(af.a, v)
+            }
+
+            SwitchRow {
+                visible: !!props.editor.cat
+                text: qsTr("Pin to top of %1").arg(props.editor.nodeName(props.editor.cat))
+                on: LauncherCustomizer.pinnedIn("kde:" + props.editor.cat, af.id_)
+                onToggledTo: v => props.store.pin("kde:" + props.editor.cat, af.id_, v)
             }
 
             SwitchRow {
@@ -595,6 +602,56 @@ Item {
                 text: qsTr("Hidden")
                 on: mf.n?.hidden ?? false
                 onToggledTo: v => props.store.kdeSet(mf.path, { hidden: v ? "1" : "0" })
+            }
+
+            // Launcher look: an optional background behind this category's apps.
+            RowLayout {
+                id: lookRow
+
+                readonly property var look: LauncherCustomizer.data?.looks?.["kde:" + mf.path] ?? ({})
+
+                Layout.fillWidth: true
+                spacing: Tokens.spacing.medium
+
+                StyledText {
+                    Layout.fillWidth: true
+                    text: qsTr("Background in the launcher")
+                    font: Tokens.font.body.medium
+                }
+
+                StyledRect {
+                    visible: !!lookRow.look.enabled
+                    implicitWidth: 52
+                    implicitHeight: 30
+                    radius: Tokens.rounding.full
+                    color: Colours.palette.m3surfaceContainerHighest
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: lookRow.look.color || "transparent"
+                        border.width: 1
+                        border.color: Colours.palette.m3outlineVariant
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: props.editor.pickColor("kde:" + mf.path, mf.n?.name ?? "")
+                    }
+                }
+
+                StyledSwitch {
+                    checked: !!lookRow.look.enabled
+                    onToggled: {
+                        if (checked && !lookRow.look.color)
+                            props.editor.pickColor("kde:" + mf.path, mf.n?.name ?? "");
+                        else
+                            props.store.setLook("kde:" + mf.path, { enabled: checked });
+                        // The saved setting decides (picking a colour can be cancelled).
+                        checked = Qt.binding(() => !!lookRow.look.enabled);
+                    }
+                }
             }
 
             Flow {

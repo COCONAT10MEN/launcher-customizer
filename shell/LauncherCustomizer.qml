@@ -26,6 +26,16 @@ Singleton {
 
     readonly property bool useKde: root.pluginActive && root.kde?.ok === true
     readonly property string iconStyle: root.data?.iconStyle === "theme" ? "theme" : "material"
+    // "stack": subcategory sections one under another; "flow": side by side when they fit.
+    readonly property string sectionLayout: root.data?.sectionLayout === "flow" ? "flow" : "stack"
+    // A dot by the name of apps installed or updated in the last `newDays` days, until launched.
+    readonly property bool newDot: root.data?.newDot !== false
+    readonly property int newDays: Math.max(1, Number(root.data?.newDays ?? 7) || 7)
+    // The category the launcher's app menu was opened in (for "Pin to top").
+    property string contextCategory: ""
+    property real nowSec: Date.now() / 1000
+
+    onKdeChanged: root.nowSec = Date.now() / 1000
 
     // "kde:<menu path>" -> { appId: true }, top-level categories including their subcategories.
     readonly property var kdeMembers: {
@@ -41,6 +51,8 @@ Singleton {
 
     signal editRequested(string appId)
     signal reorderRequested(string categoryId, var ids)
+    signal pinRequested(string categoryId, string appId, bool pin)
+    signal seenRequested(string appId)
 
     function requestEdit(appId: string): void {
         root.editRequested(appId);
@@ -49,6 +61,63 @@ Singleton {
     /// The launcher's custom order changed (drag and drop): the plugin saves it.
     function requestReorder(categoryId: string, ids: var): void {
         root.reorderRequested(categoryId, ids);
+    }
+
+    function requestPin(categoryId: string, appId: string, pin: bool): void {
+        root.pinRequested(categoryId, appId, pin);
+    }
+
+    // ---------------------------------------------- pins, new apps, looks
+
+    function pinnedIn(categoryId: string, appId: string): bool {
+        return root.pluginActive && !!appId && (root.data?.pinned?.[categoryId] ?? []).includes(appId);
+    }
+
+    /// Pinned apps first (in the order they were pinned), the rest as they were.
+    function pinFirst(list: var, categoryId: string): var {
+        const pins = root.data?.pinned?.[categoryId] ?? [];
+        if (!pins.length)
+            return list;
+        const rank = {};
+        pins.forEach((id, i) => rank[id] = i);
+        const top = list.filter(a => rank[a.id] !== undefined).sort((a, b) => rank[a.id] - rank[b.id]);
+        return top.concat(list.filter(a => rank[a.id] === undefined));
+    }
+
+    /// When this machine installed or last updated the app (seconds), 0 if unknown.
+    function installedAt(appId: string): real {
+        return root.kde?.apps?.[appId]?.installed ?? 0;
+    }
+
+    function isNew(appId: string): bool {
+        if (!root.pluginActive || !root.newDot || !appId)
+            return false;
+        const t = root.installedAt(appId);
+        // Only what came after the feature was turned on, and not opened since.
+        return t > root.nowSec - root.newDays * 86400 && t > (root.data?.seenSince ?? root.nowSec) && t > (root.data?.seen?.[appId] ?? 0);
+    }
+
+    /// Launching an app clears its dot.
+    function markSeen(appId: string): void {
+        if (root.isNew(appId))
+            root.seenRequested(appId);
+    }
+
+    /// Readable text colour on top of a category background ("transparent": keep the theme's).
+    function labelOn(c: string): color {
+        const col = Qt.color(c);
+        if (col.a < 0.45)
+            return "transparent";
+        const lum = 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
+        return lum > 0.55 ? "#1c1b1f" : "#f4eff4";
+    }
+
+    /// { enabled, color, label } of a category's background.
+    function lookFor(categoryId: string): var {
+        const l = root.data?.looks?.[categoryId];
+        if (!root.pluginActive || !l?.enabled || !l?.color)
+            return { enabled: false, color: "transparent", label: "transparent" };
+        return { enabled: true, color: l.color, label: root.labelOn(l.color) };
     }
 
     // ------------------------------------------------- sections and order
@@ -79,13 +148,23 @@ Singleton {
     }
 
     function orderBy(apps: var, categoryId: string, mode: string, sortFn: var): var {
-        if (mode !== "custom" || !root.pluginActive)
+        if (!root.pluginActive)
             return sortFn(apps);
-        const node = root.kdeNodes[categoryId];
-        const list = node ? root.flatOrder(node) : (root.data?.order?.[categoryId] ?? []);
-        const idx = {};
-        list.forEach((id, i) => idx[id] = i);
-        return apps.slice().sort((a, b) => ((idx[a.id] ?? 1e9) - (idx[b.id] ?? 1e9)) || String(a.name).localeCompare(String(b.name)));
+        const byName = (a, b) => String(a.name).localeCompare(String(b.name));
+        let out;
+        if (mode === "custom") {
+            const node = root.kdeNodes[categoryId];
+            const list = node ? root.flatOrder(node) : (root.data?.order?.[categoryId] ?? []);
+            const idx = {};
+            list.forEach((id, i) => idx[id] = i);
+            out = apps.slice().sort((a, b) => ((idx[a.id] ?? 1e9) - (idx[b.id] ?? 1e9)) || byName(a, b));
+        } else if (mode === "newest" || mode === "oldest") {
+            const dir = mode === "newest" ? -1 : 1;
+            out = apps.slice().sort((a, b) => dir * (root.installedAt(a.id) - root.installedAt(b.id)) || byName(a, b));
+        } else {
+            out = sortFn(apps);
+        }
+        return root.pinFirst(out, categoryId);
     }
 
     /// What the launcher grid shows for a category: { top, sections }.
@@ -191,6 +270,13 @@ Singleton {
         return root.useKde ? root.kdeDefinitions(base) : base;
     }
 
+
+    Timer {
+        interval: 600000
+        running: root.pluginActive && root.newDot
+        repeat: true
+        onTriggered: root.nowSec = Date.now() / 1000
+    }
 
     FileView {
         path: root.path

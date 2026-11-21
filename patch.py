@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "10"
+VERSION = "12"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -180,6 +180,7 @@ OPS = [
         '    property string lcDropId: ""\n'
         '    property bool lcDropAfter: false\n'
         '    property point lcDragPos: Qt.point(0, 0)\n'
+        '    readonly property var lcTopLook: LauncherCustomizer.lookFor(root.currentCategory)\n'
         '\n'
         '    function lcGroupOf(id: string): var {\n'
         '        if (gridModel.values.some(a => a.id === id))\n'
@@ -283,73 +284,116 @@ OPS = [
         '                    flickable: grid\n'
         '                }\n'
         '\n'
-        '                // Launcher Customizer: one section per KDE subcategory.\n'
-        '                footer: Column {\n'
+        "                // Launcher Customizer: the category's own background, behind its tiles.\n"
+        '                StyledRect {\n'
+        '                    z: -1\n'
+        '                    visible: root.lcTopLook.enabled && grid.count > 0\n'
         '                    width: grid.width\n'
+        '                    height: Math.ceil(grid.count / Math.max(1, Math.floor(grid.width / grid.cellWidth))) * grid.cellHeight\n'
+        '                    radius: Tokens.rounding.large\n'
+        '                    color: root.lcTopLook.color\n'
+        '                }\n'
+        '\n'
+        '                // Launcher Customizer: one block per KDE subcategory, stacked or\n'
+        '                // flowing side by side.\n'
+        '                footer: Flow {\n'
+        '                    readonly property bool flowing: LauncherCustomizer.sectionLayout === "flow"\n'
+        '\n'
+        '                    width: grid.width\n'
+        '                    topPadding: root.lcSections.length > 0 ? (grid.count > 0 ? Tokens.spacing.extraLarge : Tokens.spacing.small) : 0\n'
         '                    bottomPadding: root.lcSections.length > 0 ? Tokens.spacing.medium : 0\n'
+        '                    spacing: flowing ? Tokens.spacing.large : Tokens.spacing.extraLarge + Tokens.spacing.small\n'
         '\n'
         '                    Repeater {\n'
         '                        model: root.lcSections\n'
         '\n'
-        '                        delegate: Column {\n'
+        '                        delegate: Item {\n'
         '                            id: lcSec\n'
         '\n'
         '                            required property var modelData\n'
+        '                            readonly property var look: LauncherCustomizer.lookFor(lcSec.modelData.id)\n'
+        '                            readonly property bool flowing: LauncherCustomizer.sectionLayout === "flow"\n'
+        '                            // Flowing blocks all get the same inner padding, so titles line up.\n'
+        '                            readonly property int pad: lcSec.look.enabled || lcSec.flowing ? Tokens.padding.medium : 0\n'
+        '                            readonly property int tileW: Tokens.sizes.launcher.browseTileWidth\n'
+        '                            readonly property int gap: Tokens.spacing.medium\n'
+        '                            readonly property int perRow: Math.max(1, Math.floor((grid.width - lcSec.pad * 2 + lcSec.gap) / (lcSec.tileW + lcSec.gap)))\n'
+        '                            readonly property int cols: Math.max(1, Math.min(lcSec.perRow, lcSec.modelData.apps.length))\n'
         '\n'
-        '                            width: grid.width\n'
-        '                            topPadding: Tokens.spacing.large\n'
-        '                            spacing: Tokens.spacing.small\n'
+        '                            width: lcSec.flowing ? Math.max(lcSec.cols * lcSec.tileW + (lcSec.cols - 1) * lcSec.gap, lcHead.implicitWidth) + lcSec.pad * 2 : grid.width\n'
+        '                            height: lcBody.implicitHeight + lcSec.pad * 2\n'
         '\n'
-        '                            Row {\n'
-        '                                leftPadding: Tokens.padding.small\n'
-        '                                spacing: Tokens.spacing.small\n'
-        '\n'
-        '                                MaterialIcon {\n'
-        '                                    anchors.verticalCenter: parent.verticalCenter\n'
-        '                                    visible: !!lcSec.modelData.icon\n'
-        '                                    text: lcSec.modelData.icon ?? ""\n'
-        '                                    color: Colours.palette.m3primary\n'
-        '                                    fontStyle: Tokens.font.icon.small\n'
-        '                                }\n'
-        '\n'
-        '                                IconImage {\n'
-        '                                    anchors.verticalCenter: parent.verticalCenter\n'
-        '                                    visible: !lcSec.modelData.icon && !!lcSec.modelData.iconSource\n'
-        '                                    implicitSize: visible ? 18 : 0\n'
-        '                                    source: lcSec.modelData.iconSource ?? ""\n'
-        '                                }\n'
-        '\n'
-        '                                StyledText {\n'
-        '                                    anchors.verticalCenter: parent.verticalCenter\n'
-        '                                    text: lcSec.modelData.name\n'
-        '                                    color: Colours.palette.m3onSurfaceVariant\n'
-        '                                    font: Tokens.font.label.large\n'
-        '                                }\n'
+        '                            StyledRect {\n'
+        '                                anchors.fill: parent\n'
+        '                                visible: lcSec.look.enabled\n'
+        '                                radius: Tokens.rounding.large\n'
+        '                                color: lcSec.look.color\n'
         '                            }\n'
         '\n'
-        '                            Flow {\n'
-        '                                width: grid.width\n'
-        '                                spacing: Tokens.spacing.medium\n'
+        '                            Column {\n'
+        '                                id: lcBody\n'
         '\n'
-        '                                Repeater {\n'
-        '                                    model: lcSec.modelData.apps\n'
+        '                                x: lcSec.pad\n'
+        '                                y: lcSec.pad\n'
+        '                                width: lcSec.width - lcSec.pad * 2\n'
+        '                                spacing: Tokens.spacing.small\n'
         '\n'
-        '                                    delegate: Item {\n'
-        '                                        id: lcCell\n'
+        '                                Row {\n'
+        '                                    id: lcHead\n'
         '\n'
-        '                                        required property var modelData\n'
+        '                                    // Flowing blocks centre their title; stacked ones keep it on the left.\n'
+        '                                    x: lcSec.flowing ? (lcBody.width - width) / 2 : Tokens.padding.small\n'
+        '                                    spacing: Tokens.spacing.small\n'
         '\n'
-        '                                        objectName: "lcTile:" + lcCell.modelData.id\n'
-        '                                        implicitWidth: lcTile.implicitWidth\n'
-        '                                        implicitHeight: lcTile.implicitHeight\n'
+        '                                    MaterialIcon {\n'
+        '                                        anchors.verticalCenter: parent.verticalCenter\n'
+        '                                        visible: !!lcSec.modelData.icon\n'
+        '                                        text: lcSec.modelData.icon ?? ""\n'
+        '                                        color: lcSec.look.label.a > 0 ? lcSec.look.label : Colours.palette.m3primary\n'
+        '                                        fontStyle: Tokens.font.icon.small\n'
+        '                                    }\n'
         '\n'
-        '                                        AppTile {\n'
-        '                                            id: lcTile\n'
+        '                                    IconImage {\n'
+        '                                        anchors.verticalCenter: parent.verticalCenter\n'
+        '                                        visible: !lcSec.modelData.icon && !!lcSec.modelData.iconSource\n'
+        '                                        implicitSize: visible ? 18 : 0\n'
+        '                                        source: lcSec.modelData.iconSource ?? ""\n'
+        '                                    }\n'
         '\n'
-        '                                            modelData: lcCell.modelData\n'
-        '                                            index: -1\n'
-        '                                            selected: false\n'
-        '                                            browser: root\n'
+        '                                    StyledText {\n'
+        '                                        anchors.verticalCenter: parent.verticalCenter\n'
+        '                                        text: lcSec.modelData.name\n'
+        '                                        color: lcSec.look.label.a > 0 ? lcSec.look.label : Colours.palette.m3onSurfaceVariant\n'
+        '                                        font: Tokens.font.label.large\n'
+        '                                    }\n'
+        '                                }\n'
+        '\n'
+        '                                Flow {\n'
+        '                                    width: lcBody.width\n'
+        '                                    spacing: lcSec.gap\n'
+        '\n'
+        '                                    Repeater {\n'
+        '                                        model: lcSec.modelData.apps\n'
+        '\n'
+        '                                        delegate: Item {\n'
+        '                                            id: lcCell\n'
+        '\n'
+        '                                            required property var modelData\n'
+        '\n'
+        '                                            objectName: "lcTile:" + lcCell.modelData.id\n'
+        '                                            implicitWidth: lcTile.implicitWidth\n'
+        '                                            implicitHeight: lcTile.implicitHeight\n'
+        '\n'
+        '                                            AppTile {\n'
+        '                                                id: lcTile\n'
+        '\n'
+        '                                                modelData: lcCell.modelData\n'
+        '                                                index: -1\n'
+        '                                                selected: false\n'
+        '                                                browser: root\n'
+        '                                                lcCategory: lcSec.modelData.id\n'
+        '                                                lcLabel: lcSec.look.label\n'
+        '                                            }\n'
         '                                        }\n'
         '                                    }\n'
         '                                }\n'
@@ -398,6 +442,25 @@ OPS = [
         'modules/launcher/items/AppTile.qml',
         '    Item {\n'
         '        id: page\n',
+        '    // Launcher Customizer: the category this tile is shown in (sections set it),\n'
+        '    // and the label colour on a coloured category background.\n'
+        '    property string lcCategory: ""\n'
+        '    property color lcLabel: "transparent"\n'
+        '    readonly property string lcCat: root.lcCategory || (root.browser?.currentCategory ?? "")\n'
+        '\n'
+        '    MaterialIcon {\n'
+        '        z: 6\n'
+        '        anchors.top: parent.top\n'
+        '        anchors.left: parent.left\n'
+        '        anchors.topMargin: Tokens.spacing.extraSmall\n'
+        '        anchors.leftMargin: Tokens.spacing.extraSmall\n'
+        '        visible: LauncherCustomizer.pinnedIn(root.lcCat, root.modelData?.id ?? "")\n'
+        '        text: "push_pin"\n'
+        '        fill: 1\n'
+        '        color: root.lcLabel.a > 0 ? root.lcLabel : Colours.palette.m3primary\n'
+        '        fontStyle: Tokens.font.icon.small\n'
+        '    }\n'
+        '\n'
         '    // Launcher Customizer: in the custom order, drag a tile to move it. This\n'
         '    // area keeps the grid from taking the drag over (it would scroll instead),\n'
         "    // so it also handles the tile's clicks while the custom order is on.\n"
@@ -459,12 +522,12 @@ OPS = [
     (
         'modules/launcher/Content.qml',
         '            icon: list.currentList?.sortMode === "alpha" ? "sort_by_alpha" : "trending_up"\n',
-        '            icon: list.currentList?.sortMode === "alpha" ? "sort_by_alpha" : (list.currentList?.sortMode === "custom" ? "drag_indicator" : "trending_up")\n',
+        '            icon: ({ alpha: "sort_by_alpha", custom: "drag_indicator", newest: "new_releases", oldest: "history" })[list.currentList?.sortMode] ?? "trending_up"\n',
     ),
     (
         'modules/launcher/Content.qml',
         '                trailingIcon: list.currentList?.sortMode === "alpha" ? "" : "check"\n',
-        '                trailingIcon: list.currentList?.sortMode === "alpha" || list.currentList?.sortMode === "custom" ? "" : "check"\n',
+        '                trailingIcon: ["alpha", "custom", "newest", "oldest"].includes(list.currentList?.sortMode) ? "" : "check"\n',
     ),
     (
         'modules/launcher/Content.qml',
@@ -486,8 +549,114 @@ OPS = [
         '                    sortMenu.expanded = false;\n'
         '                    list.currentList?.setSortMode("custom");\n'
         '                }\n'
+        '            },\n'
+        '            // Launcher Customizer: by when the app was installed or last updated.\n'
+        '            MenuItem {\n'
+        '                text: qsTr("Newest first")\n'
+        '                icon: "new_releases"\n'
+        '                visible: LauncherCustomizer.pluginActive\n'
+        '                trailingIcon: list.currentList?.sortMode === "newest" ? "check" : ""\n'
+        '\n'
+        '                onClicked: {\n'
+        '                    sortMenu.expanded = false;\n'
+        '                    list.currentList?.setSortMode("newest");\n'
+        '                }\n'
+        '            },\n'
+        '            MenuItem {\n'
+        '                text: qsTr("Oldest first")\n'
+        '                icon: "history"\n'
+        '                visible: LauncherCustomizer.pluginActive\n'
+        '                trailingIcon: list.currentList?.sortMode === "oldest" ? "check" : ""\n'
+        '\n'
+        '                onClicked: {\n'
+        '                    sortMenu.expanded = false;\n'
+        '                    list.currentList?.setSortMode("oldest");\n'
+        '                }\n'
         '            }\n'
         '        ]\n',
+    ),
+    (
+        'modules/launcher/items/AppTile.qml',
+        'import qs.utils\n',
+        'import qs.utils\n'
+        'import qs.modules.launcher.services\n',
+    ),
+    (
+        'modules/launcher/items/AppTile.qml',
+        '                    NameLabel {\n'
+        '                        id: name\n'
+        '\n'
+        '                        anchors.top: parent.top\n'
+        '                        anchors.horizontalCenter: parent.horizontalCenter\n'
+        '                        maxLines: root.labelLines\n'
+        '                    }\n',
+        '                    NameLabel {\n'
+        '                        id: name\n'
+        '\n'
+        '                        anchors.top: parent.top\n'
+        '                        anchors.horizontalCenter: parent.horizontalCenter\n'
+        '                        maxLines: root.labelLines\n'
+        '                        // Launcher Customizer: room for the "new" dot before the name.\n'
+        '                        leftPadding: lcNewDot.visible ? 10 : 0\n'
+        '                    }\n'
+        '\n'
+        '                    // Launcher Customizer: installed or updated recently, not opened yet.\n'
+        '                    Rectangle {\n'
+        '                        id: lcNewDot\n'
+        '\n'
+        '                        visible: LauncherCustomizer.isNew(root.modelData?.id ?? "")\n'
+        '                        width: 7\n'
+        '                        height: 7\n'
+        '                        radius: 4\n'
+        '                        color: root.lcLabel.a > 0 ? root.lcLabel : Colours.palette.m3primary\n'
+        '                        x: name.x + name.leftPadding + Math.max(0, (name.width - name.leftPadding - name.contentWidth) / 2) - width - 3\n'
+        '                        y: name.y + (root.lineHeight - height) / 2\n'
+        '                    }\n',
+    ),
+    (
+        'modules/launcher/items/AppTile.qml',
+        '        color: root.selected ? Colours.palette.m3onSurface : Colours.palette.m3onSurfaceVariant\n',
+        '        color: root.lcLabel.a > 0 ? root.lcLabel : (root.selected ? Colours.palette.m3onSurface : Colours.palette.m3onSurfaceVariant)\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        '        Apps.launch(app);\n',
+        '        LauncherCustomizer.markSeen(app?.id ?? "");\n'
+        '        Apps.launch(app);\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        '        contextMenu.openFor(app, targetItem);\n',
+        '        // Launcher Customizer: "Pin to top" acts on the category the tile is shown in.\n'
+        '        LauncherCustomizer.contextCategory = targetItem?.lcCat ?? root.currentCategory;\n'
+        '        contextMenu.openFor(app, targetItem);\n',
+    ),
+    (
+        'modules/launcher/AppBrowserGrid.qml',
+        '                delegate: AppTile {\n'
+        '                    browser: root\n',
+        '                delegate: AppTile {\n'
+        '                    browser: root\n'
+        '                    lcLabel: root.lcTopLook.label\n',
+    ),
+    (
+        'modules/launcher/items/AppContextMenu.qml',
+        '        Controls.MenuItem {\n'
+        '            text: qsTr("App info")\n',
+        '        // Launcher Customizer: keep this app first in the category it was opened in.\n'
+        '        Controls.MenuItem {\n'
+        '            readonly property bool lcPinned: LauncherCustomizer.pinnedIn(LauncherCustomizer.contextCategory, root.app?.id ?? "")\n'
+        '\n'
+        '            visible: LauncherCustomizer.pluginActive && LauncherCustomizer.contextCategory !== ""\n'
+        '            text: lcPinned ? qsTr("Unpin from top") : qsTr("Pin to top")\n'
+        '            icon: "vertical_align_top"\n'
+        '            onClicked: {\n'
+        '                if (root.app?.id)\n'
+        '                    LauncherCustomizer.requestPin(LauncherCustomizer.contextCategory, root.app.id, !lcPinned);\n'
+        '            }\n'
+        '        },\n'
+        '        Controls.MenuItem {\n'
+        '            text: qsTr("App info")\n',
     ),
 ]
 

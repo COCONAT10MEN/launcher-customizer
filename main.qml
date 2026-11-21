@@ -2,7 +2,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Caelestia
+import Caelestia.Config
 import qs.services
+import qs.utils
 import qs.modules.launcher.services
 import "."
 
@@ -48,6 +50,137 @@ Scope {
 
     function setIconStyle(style: string): void {
         root.update(d => d.iconStyle = style);
+    }
+
+    function setSetting(key: string, value: var): void {
+        root.update(d => d[key] = value);
+    }
+
+    /// Category background: { enabled, color } ("#rrggbb" or "#aarrggbb").
+    function setLook(categoryId: string, look: var): void {
+        root.update(d => {
+            d.looks = d.looks && typeof d.looks === "object" ? d.looks : {};
+            d.looks[categoryId] = Object.assign({}, d.looks[categoryId] ?? {}, look);
+        });
+    }
+
+    function pin(categoryId: string, appId: string, on: bool): void {
+        root.update(d => {
+            d.pinned = d.pinned && typeof d.pinned === "object" ? d.pinned : {};
+            const list = (d.pinned[categoryId] ?? []).filter(x => x !== appId);
+            if (on)
+                list.push(appId);
+            if (list.length > 0)
+                d.pinned[categoryId] = list;
+            else
+                delete d.pinned[categoryId];
+        });
+    }
+
+    function markSeen(appId: string): void {
+        root.update(d => {
+            d.seen = d.seen && typeof d.seen === "object" ? d.seen : {};
+            d.seen[appId] = Math.round(Date.now() / 1000);
+        });
+    }
+
+    // ============================================ hidden apps (shared with Settings)
+
+    // One list for both: Caelestia's own hidden apps (Settings → Applications
+    // & Shortcuts, and the launcher's "Hide app"). Entries KDE marks NoDisplay
+    // count as hidden too, and showing one clears that flag.
+
+    function hiddenInCaelestia(appId: string): bool {
+        return !!appId && Strings.testRegexList(GlobalConfig.launcher.hiddenApps ?? [], appId);
+    }
+
+    /// Hidden by a pattern in the config file, so it cannot be toggled per app.
+    function hiddenByPattern(appId: string): bool {
+        return root.hiddenInCaelestia(appId) && !(GlobalConfig.launcher.hiddenApps ?? []).includes(appId);
+    }
+
+    function appHidden(app: var): bool {
+        return !!app && (!!app.noDisplay || root.hiddenInCaelestia(app.id));
+    }
+
+    function setAppHidden(app: var, hide: bool): void {
+        if (!app?.id)
+            return;
+        const list = (GlobalConfig.launcher.hiddenApps ?? []).slice();
+        if (hide) {
+            if (!root.hiddenInCaelestia(app.id))
+                GlobalConfig.launcher.hiddenApps = list.concat([app.id]);
+            return;
+        }
+        if (root.hiddenByPattern(app.id))
+            Toaster.toast(qsTr("Launcher Customizer"), qsTr("%1 is hidden by a pattern in Caelestia's config file").arg(app.name ?? app.id), "warning");
+        if (list.includes(app.id))
+            GlobalConfig.launcher.hiddenApps = list.filter(x => x !== app.id);
+        if (app.noDisplay)
+            root.appSet(app.id, { noDisplay: false });
+    }
+
+    // =================================================== backup and share
+
+    function exportLayout(): void {
+        saveDialog.running = true;
+    }
+
+    function importLayout(): void {
+        openDialog.running = true;
+    }
+
+    function doExport(path: string): void {
+        if (!path.endsWith(".tar.gz"))
+            path += ".tar.gz";
+        const hidden = JSON.stringify((GlobalConfig.launcher.hiddenApps ?? []).slice());
+        root.kdeRun(["export", path, hidden], res => {
+            if (res?.ok)
+                Toaster.toast(qsTr("Layout exported"), path, "check_circle");
+        });
+    }
+
+    function doImport(path: string): void {
+        root.kdeRun(["import", path], res => {
+            if (!res?.ok)
+                return;
+            const got = res.created ?? {};
+            const cur = root.current();
+            const next = got.plugin && typeof got.plugin === "object" ? got.plugin : {};
+            next.seen = cur.seen ?? {};
+            next.seenSince = cur.seenSince ?? Math.round(Date.now() / 1000);
+            root.write(next);
+            const hidden = (GlobalConfig.launcher.hiddenApps ?? []).slice();
+            for (const id of (got.hiddenApps ?? []))
+                if (!hidden.includes(id))
+                    hidden.push(id);
+            GlobalConfig.launcher.hiddenApps = hidden;
+            Toaster.toast(qsTr("Layout imported"), qsTr("Undo puts your previous layout back"), "check_circle");
+        });
+    }
+
+    Process {
+        id: saveDialog
+
+        command: ["kdialog", "--title", qsTr("Export launcher layout"), "--getsavefilename", Quickshell.env("HOME") + "/launcher-layout.tar.gz", "Launcher layout (*.tar.gz)"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (text.trim())
+                    root.doExport(text.trim());
+            }
+        }
+    }
+
+    Process {
+        id: openDialog
+
+        command: ["kdialog", "--title", qsTr("Import launcher layout"), "--getopenfilename", Quickshell.env("HOME"), "Launcher layout (*.tar.gz)"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (text.trim())
+                    root.doImport(text.trim());
+            }
+        }
     }
 
     // ===================================================== KDE menu bridge
@@ -378,11 +511,14 @@ Scope {
             cur = JSON.parse(dataFile.text() || "{}") || {};
         } catch (e) {}
         const stale = ["placement", "source", "categories", "assignments"].filter(k => cur[k] !== undefined);
-        if (stale.length > 0) {
-            for (const k of stale)
-                delete cur[k];
+        for (const k of stale)
+            delete cur[k];
+        // New-app dots start from the first run, not from everything already installed.
+        const startDots = cur.seenSince === undefined;
+        if (startDots)
+            cur.seenSince = Math.round(Date.now() / 1000);
+        if (stale.length > 0 || startDots)
             root.write(cur);
-        }
         LauncherCustomizer.pluginActive = true;
         root.refreshKde();
     }
@@ -422,6 +558,14 @@ Scope {
 
         function onReorderRequested(categoryId: string, ids: var): void {
             root.saveOrder(categoryId, ids);
+        }
+
+        function onPinRequested(categoryId: string, appId: string, on: bool): void {
+            root.pin(categoryId, appId, on);
+        }
+
+        function onSeenRequested(appId: string): void {
+            root.markSeen(appId);
         }
 
         target: root.shellReady ? LauncherCustomizer : null

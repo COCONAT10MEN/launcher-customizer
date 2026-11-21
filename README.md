@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.1.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.2.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -33,10 +33,19 @@ Caelestia.
   several, drag and drop, select many at once, add separators, set your own order, or
   sort with one click.
 - **Subcategories as sections.** Open a category in the launcher and its subcategories
-  appear inside it as their own titled sections, each just big enough for what it holds,
-  right below the category's own apps. No extra tabs.
+  appear inside it as their own titled sections, right below the category's own apps. No
+  extra tabs. Pick *Stacked* (one under another) or *Flowing*, where sections sit side
+  by side when they fit, each just big enough for what it holds.
+- **Colour your categories.** Give any category a background in the launcher, picked
+  with a full colour picker, a hex code or a swatch from your current theme. Text on it
+  stays readable by itself.
 - **Arrange the launcher like your desktop.** Switch the launcher's sort button to
   *Custom* and drag tiles into any order you like. The order sticks, per category.
+- **Pin to top.** Right-click an app in the launcher and pin it to the front of its
+  category. It stays there whatever the sort order.
+- **Spot what's new.** Sort by *Newest first* or *Oldest first*, by when each app was
+  installed or last updated (real package dates for pacman and Flatpak). Apps that are
+  new or just updated get a small dot in your theme's colour until you open them.
 - **Edit the apps themselves.** Change any app's name, description, icon, command,
   arguments, environment variables, work folder or keywords, and choose whether it runs
   in a terminal, as another user, on the dedicated graphics card, or with launch
@@ -45,11 +54,16 @@ Caelestia.
 - **Your own launchers.** Turn any command or script into a launcher with its own name
   and icon.
 - **Hide anything in one click.** Hover any app or category in the editor and click the
-  eye to take it out of the launcher; click again to bring it back.
+  eye to take it out of the launcher; click again to bring it back. Hidden apps are the
+  same list as *Settings -> Applications & Shortcuts* and the launcher's *Hide app*, so
+  hiding or showing an app anywhere shows up everywhere.
 - **Hidden apps, found.** Show the entries apps hide by default, and bring back the ones
   you want.
 - **Safe to experiment.** Every change can be undone, and *Restore to system menu* puts
   everything back in one click.
+- **Back up and share your layout.** Export categories, order, icons, pins, backgrounds,
+  hidden apps and app shortcuts to one file, and import it on another machine (or after a
+  reinstall). Importing can be undone too.
 - **One menu everywhere.** Your layout is shared with KDE: Kickoff, KDE's Menu Editor and
   Caelestia's launcher always show the same thing, and changes made in either place sync
   to the other.
@@ -106,7 +120,11 @@ quickshell ipc -p ~/.config/quickshell/caelestia/shell.qml call launcherCustomiz
 | Change the order | arrows or right-click · `Alt+Up` `Alt+Down` · drag within the list · or drag tiles in the launcher with *Custom* sort |
 | Sort a category, or everything | sort button · right-click a category · *⋮* menu |
 | Look inside a category or subcategory | the arrow next to it, in the tree or the list (or double-click it) |
-| Hide or show an app or category | hover it and click the eye · right-click -> *Hide* · *Hidden* switch |
+| Hide or show an app or category | hover it and click the eye · right-click -> *Hide* · *Hidden* switch (shared with *Settings -> Applications & Shortcuts*) |
+| Pin an app to the top of a category | right-click it in the launcher or the editor -> *Pin to top* · *Pin to top of…* switch |
+| Category background in the launcher | select the category -> *Background in the launcher*, click the swatch to change the colour |
+| Stacked or flowing subcategories, category icon style, new-app dots | *Launcher settings* (the sliders button) |
+| Export or import your layout | *Launcher settings -> Backup and share* · *⋮ -> Export / Import layout…* |
 | See hidden apps | *Show hidden* switch |
 | Find an app | search box (name, description, comment, keywords) |
 | Start over | *⋮ -> Restore to system menu…* |
@@ -146,12 +164,21 @@ own `kbuildsycoca6 --menutest`.
 
 ## Configuring
 
-- **Custom order** (the launcher's sort button) - next to *Most used* and *A-Z*. In a
-  category it follows the category's order (the same one you set in the editor and that
-  KDE uses); *Favorites* and *All Applications* keep their own.
+- **Sort orders** (the launcher's sort button) - *Custom*, *Newest first* and *Oldest
+  first* join *Most used* and *A-Z*. *Custom* follows the category's order (the same one
+  you set in the editor and that KDE uses); *Favorites* and *All Applications* keep their
+  own. Pinned apps always come first.
 
-- **Launcher icons** (*⋮* menu) - *Material* shows KDE's categories in Caelestia's style,
-  *icon theme* uses your KDE icon theme. Icons you pick yourself always show as-is.
+Everything else is in the editor's *Launcher settings*:
+
+- **Subcategories** - *Stacked*: sections one under another, titles on the left.
+  *Flowing*: sections side by side when there is room, titles centred.
+- **Category icons** - *Material* shows KDE's categories in Caelestia's style, *Icon
+  theme* uses your KDE icon theme. Icons you pick yourself always show as-is.
+- **New apps** - the dot for apps installed or updated in the last few days (7 by
+  default, 1 to 60). It only marks what arrives after you turn it on, and goes away once
+  you open the app.
+- **Backup and share** - export to or import from a `.tar.gz` layout file.
 
 ## Troubleshooting
 
@@ -161,6 +188,7 @@ own `kbuildsycoca6 --menutest`.
 | A Material icon doesn't show in KDE | Install `python-fonttools`, then pick the icon again |
 | Made a mistake | `Ctrl+Z`, or *Undo* on the bar that appears after a change |
 | "Could not hook into the launcher after an update" notification | Caelestia changed the hooked code; everything was put back to stock. Check for a plugin update |
+| Too many or too few apps marked new | *Launcher settings -> New apps*: change the days or switch the dots off |
 | Want to see what it is doing | Run `caelestia shell -l` and look for `[launcher-customizer]` lines |
 
 ## How it hooks in
@@ -180,6 +208,8 @@ own `kbuildsycoca6 --menutest`.
 main.qml              plugin entry: KDE sync, editor actions, patching
 Editor.qml            the editor window: category tree and contents
 Properties.qml        properties of the selected launcher, category or separator
+LauncherSettings.qml  layout, icon style, new-app dots, backup
+CategoryColorPicker.qml  colour picker for category backgrounds
 MenuPopup.qml         right-click and toolbar menus
 ShortcutField.qml     records a global shortcut
 IconPicker.qml        Material / icon theme / image file picker
