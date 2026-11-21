@@ -11,6 +11,8 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Caelestia.Config
+import qs.utils
 
 Singleton {
     id: root
@@ -31,8 +33,18 @@ Singleton {
     // A dot by the name of apps installed or updated in the last `newDays` days, until launched.
     readonly property bool newDot: root.data?.newDot !== false
     readonly property int newDays: Math.max(1, Number(root.data?.newDays ?? 7) || 7)
+    // Launcher behaviour toggles (Launcher settings in the editor).
+    readonly property bool typeToSearch: root.data?.typeToSearch !== false
+    readonly property bool noFavHearts: root.data?.noFavHearts === true
+    readonly property bool openLastTab: root.data?.openLastTab === true
+    // The modern style's "Hello, <name>": shown or not, and its wording ({name} = your name).
+    readonly property bool showGreeting: root.data?.showGreeting !== false
+    readonly property string greeting: String(root.data?.greeting ?? "")
+    // The launcher tab last shown (this session).
+    property string lastCategory: "favorites"
     // The category the launcher's app menu was opened in (for "Pin to top").
     property string contextCategory: ""
+    property string contextApp: ""
     property real nowSec: Date.now() / 1000
 
     onKdeChanged: root.nowSec = Date.now() / 1000
@@ -175,6 +187,11 @@ Singleton {
             const idx = {};
             list.forEach((id, i) => idx[id] = i);
             out = apps.slice().sort((a, b) => ((idx[a.id] ?? 1e9) - (idx[b.id] ?? 1e9)) || byName(a, b));
+        } else if (mode === "alpha") {
+            // Favourites first, then by name (the classic style leaves A-Z to us).
+            const favs = GlobalConfig.launcher.favouriteApps ?? [];
+            const fav = a => Strings.testRegexList(favs, a.id) ? 0 : 1;
+            out = apps.slice().sort((a, b) => (fav(a) - fav(b)) || String(a.name).localeCompare(String(b.name), undefined, { sensitivity: "base" }));
         } else if (mode === "newest" || mode === "oldest") {
             const dir = mode === "newest" ? -1 : 1;
             out = apps.slice().sort((a, b) => dir * (root.installedAt(a.id) - root.installedAt(b.id)) || byName(a, b));

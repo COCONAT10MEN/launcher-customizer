@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import Caelestia.Config
 import qs.components
 import qs.components.controls
+import qs.components.containers
 import qs.services
 import qs.modules.launcher.services
 
@@ -77,11 +78,20 @@ Item {
             anchors.fill: parent
         }
 
-        ColumnLayout {
-            id: content
+        // Scrolls when the window is too short for everything.
+        StyledFlickable {
+            id: scroller
 
             anchors.fill: parent
             anchors.margins: Tokens.padding.large
+            clip: true
+            contentHeight: content.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+
+        ColumnLayout {
+            id: content
+
+            width: scroller.width
             spacing: Tokens.spacing.medium
 
             RowLayout {
@@ -195,6 +205,72 @@ Item {
                 }
             }
 
+            // ------------------------------------------------ behaviour
+            Heading {
+                text: qsTr("Behaviour")
+            }
+
+            Toggle {
+                title: qsTr("Typing always searches")
+                hint: qsTr("Typing anywhere in the launcher goes into search. Off: press / or click the search field first.")
+                on: dlg.store.cfg.typeToSearch !== false
+                onToggledTo: v => dlg.store.setSetting("typeToSearch", v)
+            }
+
+            Toggle {
+                title: qsTr("No hearts in Favorites")
+                hint: qsTr("Everything in Favorites is a favourite already, so its tiles skip the heart. Other tabs keep theirs.")
+                on: dlg.store.cfg.noFavHearts === true
+                onToggledTo: v => dlg.store.setSetting("noFavHearts", v)
+            }
+
+            Toggle {
+                title: qsTr("Open on last tab")
+                hint: qsTr("The launcher opens on the tab you used last. Off: it always opens on Favorites.")
+                on: dlg.store.cfg.openLastTab === true
+                onToggledTo: v => dlg.store.setSetting("openLastTab", v)
+            }
+
+            // ------------------------------------------------ greeting
+            Heading {
+                text: qsTr("Greeting")
+            }
+
+            Toggle {
+                title: qsTr("Show the greeting")
+                hint: qsTr("The line at the top left of the launcher, in the Modern style.")
+                on: dlg.store.cfg.showGreeting !== false
+                onToggledTo: v => dlg.store.setSetting("showGreeting", v)
+            }
+
+            StyledTextField {
+                id: greetingField
+
+                Layout.fillWidth: true
+                enabled: dlg.store.cfg.showGreeting !== false
+                opacity: enabled ? 1 : 0.45
+                placeholderText: qsTr("Hello, {name}")
+                text: dlg.store.cfg.greeting ?? ""
+                onEditingFinished: {
+                    if (text !== (dlg.store.cfg.greeting ?? ""))
+                        dlg.store.setSetting("greeting", text);
+                }
+
+                Behavior on opacity {
+                    Anim {
+                        type: Anim.DefaultEffects
+                    }
+                }
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: qsTr("{name} is replaced with your name. Leave it empty for the default.")
+                wrapMode: Text.WordWrap
+                color: Colours.palette.m3onSurfaceVariant
+                font: Tokens.font.body.small
+            }
+
             // ------------------------------------------------ backup
             Heading {
                 text: qsTr("Backup and share")
@@ -228,6 +304,48 @@ Item {
                         dlg.store.importLayout();
                     }
                 }
+            }
+        }
+        }
+    }
+
+    // A setting that is on or off, with a one-line explanation.
+    component Toggle: RowLayout {
+        id: toggle
+
+        property string title
+        property string hint
+        property bool on
+
+        signal toggledTo(bool value)
+
+        Layout.fillWidth: true
+        spacing: Tokens.spacing.medium
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 0
+
+            StyledText {
+                Layout.fillWidth: true
+                text: toggle.title
+                font: Tokens.font.body.medium
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: toggle.hint
+                wrapMode: Text.WordWrap
+                color: Colours.palette.m3onSurfaceVariant
+                font: Tokens.font.body.small
+            }
+        }
+
+        StyledSwitch {
+            checked: toggle.on
+            onToggled: {
+                toggle.toggledTo(checked);
+                checked = Qt.binding(() => toggle.on);
             }
         }
     }

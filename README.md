@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.3.5-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.4.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -72,6 +72,19 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
   to the other.
 - **Looks like Caelestia.** Categories use Caelestia's Material icon style, or your KDE
   icon theme if you prefer.
+- **Moves like it was built in.** The category highlight slides from one category to the
+  next, switching category slides the apps in from that side, pinning or re-sorting
+  glides tiles to their new places, and tiles fade in one after another when the
+  launcher opens.
+- **All keyboard.** Left from the first column takes you to the category list, where
+  Up/Down switch categories as you go; Right or Enter goes back into the apps, and the
+  arrows walk through every subcategory section too.
+- **Pin to the dock by dragging.** Drag a tile onto the dock to pin it there.
+- **Your launcher, your rules.** Typing can always go straight into search (or wait for
+  `/`), Favorites can skip the hearts, the launcher can reopen on the tab you used last,
+  and the "Hello" greeting can say anything you like, or nothing.
+- **Modern and Classic.** Works with both launcher styles; Classic gets its sort menu
+  next to the search field. The Simple and Compact layouts are left exactly as they are.
 
 > [!TIP]
 > Right-click any app in the launcher and choose *App info* to jump straight to
@@ -177,8 +190,8 @@ own `kbuildsycoca6 --menutest`.
 
 ## Configuring
 
-- **Sort orders** (the launcher's sort button) - *Custom*, *Newest first* and *Oldest
-  first* join *Most used* and *A-Z*. *Custom* follows the category's order (the same one
+- **Sort orders** (the launcher's sort button; in the Classic style it sits next to the
+  search field) - *Custom*, *Newest first* and *Oldest first* join *Most used* and *A-Z*. *Custom* follows the category's order (the same one
   you set in the editor and that KDE uses); *Favorites* and *All Applications* keep their
   own. Pinned apps always come first.
 
@@ -192,6 +205,13 @@ other edit it applies when you press *Save*:
 - **New apps** - the dot for apps installed or updated in the last few days (7 by
   default, 1 to 60). It only marks what arrives after you turn it on, and goes away once
   you open the app.
+- **Behaviour**
+  - *Typing always searches* (on by default) - typing anywhere in the launcher goes
+    into search. Off: press `/` or click the search field first.
+  - *No hearts in Favorites* - tiles in Favorites skip the heart; other tabs keep it.
+  - *Open on last tab* - reopen on the tab you used last instead of Favorites.
+- **Greeting** (Modern style) - show or hide "Hello, {name}", or write your own;
+  `{name}` becomes your name.
 - **Backup and share** - export to or import from a `.tar.gz` layout file.
 
 ## Troubleshooting
