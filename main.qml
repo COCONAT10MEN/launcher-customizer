@@ -189,6 +189,49 @@ Scope {
             delete d.pinned[categoryId];
     }
 
+    /// Uninstall an app in the user's terminal: uninstall.py finds what
+    /// installed it, shows what will run and asks before doing anything.
+    function uninstall(appId: string): void {
+        const app = LauncherCustomizer.kde?.apps?.[appId];
+        if (!app?.file) {
+            Toaster.toast(qsTr("Launcher Customizer"), qsTr("Couldn't find the app's launcher file"), "warning");
+            return;
+        }
+        const cmd = ["python3", "-I", root.pluginDir + "/uninstall.py", app.file, appId, app.name ?? appId];
+        Quickshell.execDetached({
+            command: root.inTerminal(cmd),
+            workingDirectory: Quickshell.env("HOME")
+        });
+    }
+
+    /// Caelestia's terminal with the flag that makes it run a command
+    /// (Konsole and most others need one, kitty and foot do not).
+    function inTerminal(cmd: var): var {
+        const term = (GlobalConfig.general.apps.terminal ?? ["konsole"]).slice();
+        if (term.length === 0)
+            term.push("konsole");
+        const exe = String(term[0]).split("/").pop();
+        const flags = {
+            "konsole": ["-e"],
+            "alacritty": ["-e"],
+            "xterm": ["-e"],
+            "uxterm": ["-e"],
+            "ghostty": ["-e"],
+            "terminator": ["-x"],
+            "xfce4-terminal": ["-x"],
+            "gnome-terminal": ["--"],
+            "kgx": ["--"],
+            "ptyxis": ["--"],
+            "wezterm": ["start", "--"],
+            "kitty": [],
+            "foot": [],
+            "footclient": []
+        };
+        const flag = flags[exe] ?? ["-e"];
+        const has = term.some(t => t === flag[flag.length - 1]);
+        return term.concat(flag.length > 0 && !has ? flag : []).concat(cmd);
+    }
+
     function markSeen(appId: string): void {
         root.update(d => {
             d.seen = d.seen && typeof d.seen === "object" ? d.seen : {};
@@ -708,6 +751,10 @@ Scope {
 
         function onSeenRequested(appId: string): void {
             root.markSeen(appId);
+        }
+
+        function onUninstallRequested(appId: string): void {
+            root.uninstall(appId);
         }
 
         target: root.shellReady ? LauncherCustomizer : null

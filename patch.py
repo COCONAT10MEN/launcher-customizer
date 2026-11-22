@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "25"
+VERSION = "29"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -228,7 +228,7 @@ OPS = [
         '    }\n'
         '\n'
         '    property string lcPrevCategory: root.currentCategory\n'
-        '    // True while the launcher is opening: tiles fade in one after another.\n'
+        '    // True while the launcher is opening (no category slide then).\n'
         '    property bool lcIntro: LauncherCustomizer.pluginActive\n'
         '    // While the whole grid is replaced, its per-tile transitions stay off.\n'
         '    property bool lcSwitching: true\n'
@@ -267,9 +267,7 @@ OPS = [
         '        onTriggered: root.lcSwitching = false\n'
         '    }\n'
         '\n'
-        '    // Tiles listen for this and fade in one after another.\n'
-        '    signal lcIntroPlay\n'
-        '\n'
+
         '    Timer {\n'
         '        id: lcIntroEnd\n'
         '\n'
@@ -294,10 +292,11 @@ OPS = [
         '        function onLauncherChanged(): void {\n'
         '            if (root.visibilities.launcher) {\n'
         '                root.lcIntro = LauncherCustomizer.pluginActive;\n'
+        '                // Each open starts in the apps, not in the category list.\n'
+        '                root.sidebarFocused = false;\n'
         '                root.lcSwitching = true;\n'
         '                root.lcStartCategory();\n'
         '                lcIntroEnd.restart();\n'
-        '                root.lcIntroPlay();\n'
         '            }\n'
         '        }\n'
         '\n'
@@ -642,10 +641,9 @@ OPS = [
         '\n'
         '                                                modelData: lcCell.modelData\n'
         '                                                index: -1\n'
-        '                                                selected: !!root.lcSecSel && root.lcSecSel.sec === lcSec.index && root.lcSecSel.idx === lcCell.index\n'
+        '                                                selected: !root.sidebarFocused && !!root.lcSecSel && root.lcSecSel.sec === lcSec.index && root.lcSecSel.idx === lcCell.index\n'
         '                                                browser: root\n'
         '                                                lcCategory: lcSec.modelData.id\n'
-        '                                                lcOrder: grid.count + lcSec.index * 2 + lcCell.index\n'
         '                                                lcLabel: lcSec.look.label\n'
         '                                            }\n'
         '\n'
@@ -1413,7 +1411,12 @@ OPS = [
         '                    height: sidebar.currentItem?.height ?? 40\n'
         '                    y: sidebar.currentItem?.y ?? 0\n'
         '                    radius: Tokens.rounding.medium\n'
-        '                    color: Qt.alpha(Colours.palette.m3onSurface, 0.10)\n'
+        '                    // Brighter while the arrow keys are in the category list.\n'
+        '                    color: root.sidebarFocused ? Qt.alpha(Colours.palette.m3primary, 0.22) : Qt.alpha(Colours.palette.m3onSurface, 0.10)\n'
+        '\n'
+        '                    Behavior on color {\n'
+        '                        CAnim {}\n'
+        '                    }\n'
         '\n'
         '                    Behavior on y {\n'
         '                        Anim {\n'
@@ -1431,59 +1434,42 @@ OPS = [
         '        opacity: catRoot.selected && !LauncherCustomizer.pluginActive ? 0.10 : 0\n',
     ),
     (
-        'modules/launcher/items/AppTile.qml',
-        '    implicitWidth: Tokens.sizes.launcher.browseTileWidth\n'
-        '    implicitHeight: Tokens.sizes.launcher.browseTileHeight\n',
-        '    implicitWidth: Tokens.sizes.launcher.browseTileWidth\n'
-        '    implicitHeight: Tokens.sizes.launcher.browseTileHeight\n'
-        '\n'
-        '    // Launcher Customizer: when the launcher opens, tiles fade in a few at a\n'
-        "    // time, in reading order (sections after the category's own apps).\n"
-        '    property int lcOrder: root.index\n'
-        '\n'
-        '    Component.onCompleted: {\n'
-        '        if (root.browser?.lcIntro ?? false)\n'
-        '            root.lcPlayIntro();\n'
-        '    }\n'
-        '\n'
-        '    Connections {\n'
-        '        function onLcIntroPlay(): void {\n'
-        '            root.lcPlayIntro();\n'
-        '        }\n'
-        '\n'
-        '        target: root.browser\n'
-        '        ignoreUnknownSignals: true\n'
-        '    }\n'
-        '\n'
-        '    function lcPlayIntro(): void {\n'
-        '        lcIntroAnim.stop();\n'
-        '        root.opacity = 0;\n'
-        '        root.scale = 0.92;\n'
-        '        lcIntroDelay.duration = Math.min(Math.max(0, root.lcOrder), 24) * 18;\n'
-        '        lcIntroAnim.start();\n'
-        '    }\n'
-        '\n'
-        '    SequentialAnimation {\n'
-        '        id: lcIntroAnim\n'
-        '\n'
-        '        PauseAnimation {\n'
-        '            id: lcIntroDelay\n'
-        '        }\n'
-        '        ParallelAnimation {\n'
-        '            Anim {\n'
-        '                target: root\n'
-        '                property: "opacity"\n'
-        '                to: 1\n'
-        '                type: Anim.DefaultEffects\n'
-        '            }\n'
-        '            Anim {\n'
-        '                target: root\n'
-        '                property: "scale"\n'
-        '                to: 1\n'
-        '                type: Anim.FastSpatial\n'
+        'modules/launcher/AppBrowserGrid.qml',
+        '                delegate: AppTile {\n'
+        '                    browser: root\n'
+        '                    selected: grid.currentIndex === index\n',
+        '                delegate: AppTile {\n'
+        '                    browser: root\n'
+        '                    // Launcher Customizer: no app highlight while the keys are in the category list.\n'
+        '                    selected: grid.currentIndex === index && !(LauncherCustomizer.pluginActive && root.sidebarFocused)\n',
+    ),
+    (
+        'modules/launcher/items/AppContextMenu.qml',
+        '                if (root.visibilities)\n'
+        '                    root.visibilities.launcher = false;\n'
         '            }\n'
         '        }\n'
-        '    }\n',
+        '    ]\n',
+        '                if (root.visibilities)\n'
+        '                    root.visibilities.launcher = false;\n'
+        '            }\n'
+        '        },\n'
+        '        // Launcher Customizer: uninstall the app with whatever installed it\n'
+        '        // (in a terminal, which shows what runs and asks first).\n'
+        '        Controls.MenuItem {\n'
+        '            // Default layout (its grid and its search results); Simple and Compact stay stock.\n'
+        '            visible: LauncherCustomizer.pluginActive && Config.launcher.browseLayout === LauncherBrowseLayout.Default\n'
+        '            text: qsTr("Uninstall…")\n'
+        '            icon: "delete"\n'
+        '            onClicked: {\n'
+        '                if (!root.app?.id)\n'
+        '                    return;\n'
+        '                LauncherCustomizer.requestUninstall(root.app.id);\n'
+        '                if (root.visibilities)\n'
+        '                    root.visibilities.launcher = false;\n'
+        '            }\n'
+        '        }\n'
+        '    ]\n',
     ),
 ]
 

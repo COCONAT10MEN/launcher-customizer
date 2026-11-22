@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.4.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.4.1-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -73,13 +73,15 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
 - **Looks like Caelestia.** Categories use Caelestia's Material icon style, or your KDE
   icon theme if you prefer.
 - **Moves like it was built in.** The category highlight slides from one category to the
-  next, switching category slides the apps in from that side, pinning or re-sorting
-  glides tiles to their new places, and tiles fade in one after another when the
-  launcher opens.
+  next, switching category slides the apps in from that side, and pinning or re-sorting
+  glides tiles to their new places.
 - **All keyboard.** Left from the first column takes you to the category list, where
   Up/Down switch categories as you go; Right or Enter goes back into the apps, and the
   arrows walk through every subcategory section too.
 - **Pin to the dock by dragging.** Drag a tile onto the dock to pin it there.
+- **Uninstall from the launcher.** Right-click an app -> *Uninstall…*. It works out what
+  installed the app (pacman, Flatpak, Waydroid, browser and portal web apps, AppImages,
+  or just a launcher file), shows in your terminal exactly what will run, and asks first.
 - **Your launcher, your rules.** Typing can always go straight into search (or wait for
   `/`), Favorites can skip the hearts, the launcher can reopen on the tab you used last,
   and the "Hello" greeting can say anything you like, or nothing.
@@ -241,6 +243,7 @@ other edit it applies when you press *Save*:
 
 ```
 main.qml              plugin entry: KDE sync, unsaved changes, saving, patching
+uninstall.py          finds what installed an app and removes it (asks first)
 EditorView.qml        the editor page: category tabs, contents, Save
 Properties.qml        properties of the selected launcher or category
 LauncherSettings.qml  layout, icon style, new-app dots, backup

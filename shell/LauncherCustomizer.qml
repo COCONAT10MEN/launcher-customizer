@@ -82,6 +82,11 @@ Singleton {
     signal reorderRequested(string categoryId, var ids)
     signal pinRequested(string categoryId, string appId, bool pin)
     signal seenRequested(string appId)
+    signal uninstallRequested(string appId)
+
+    function requestUninstall(appId: string): void {
+        root.uninstallRequested(appId);
+    }
 
     function requestEdit(appId: string): void {
         root.editRequested(appId);
