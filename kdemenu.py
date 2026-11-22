@@ -1048,7 +1048,9 @@ def stamp():
             parts.append(f"{d}:{os.stat(d).st_mtime_ns}")
         except OSError:
             pass
-    return str(hash("|".join(parts)) & 0xFFFFFFFF)
+    # A stable hash: Python's hash() is different in every process.
+    import zlib
+    return str(zlib.crc32("|".join(parts).encode()))
 
 
 # ------------------------------------------------------------------- editing

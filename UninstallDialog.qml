@@ -285,8 +285,9 @@ Scope {
 
                                 MaterialIcon {
                                     Layout.alignment: Qt.AlignTop
-                                    text: detail.index === 0 ? "delete" : (detail.modelData.indexOf("kept") >= 0 || detail.modelData.indexOf("stay") >= 0 ? "check_circle" : "remove_circle")
-                                    color: detail.index === 0 ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
+                                    readonly property bool warn: detail.modelData.indexOf("stop working") >= 0
+                                    text: detail.index === 0 ? "delete" : (warn ? "warning" : (detail.modelData.indexOf("kept") >= 0 || detail.modelData.indexOf("stay") >= 0 ? "check_circle" : "remove_circle"))
+                                    color: detail.index === 0 || warn ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
                                     fontStyle: Tokens.font.icon.small
                                 }
 
@@ -343,7 +344,7 @@ Scope {
                     StyledText {
                         Layout.fillWidth: true
                         visible: dlg.state === "confirm" && !!dlg.info.needsAuth
-                        text: qsTr("Removing a package asks for your password.")
+                        text: qsTr("This is installed for everyone on this PC, so you may be asked for your password.")
                         wrapMode: Text.WordWrap
                         color: Colours.palette.m3onSurfaceVariant
                         font: Tokens.font.body.small

@@ -103,6 +103,19 @@ def flatpak_name(app):
     return first.split(" - ")[0].strip() or app.split(".")[-1].capitalize()
 
 
+def made_by(flatpak):
+    """Names of launchers that run through this flatpak (web apps it made)."""
+    names = []
+    for d in (os.path.join(DATA_HOME, "applications"), os.path.join(DATA_HOME, "xdg-desktop-portal", "applications")):
+        for f in sorted(glob.glob(os.path.join(d, "*.desktop"))):
+            e = read_entry(f)
+            if e.get("X-Flatpak") == flatpak and os.path.basename(f) != flatpak + ".desktop" and f"'{flatpak}'" in e.get("Exec", "") + "'":
+                n = e.get("Name", "")
+                if n and n not in names:
+                    names.append(n)
+    return names
+
+
 def plan(path, app_id, name):
     """(info, steps). info: what, summary, details, keeps, error; steps are
     commands, or ("rm", [files]) for plain removals."""
@@ -111,12 +124,17 @@ def plan(path, app_id, name):
     nice = lambda f: f.replace(HOME, "~", 1)
 
     flatpak = entry.get("X-Flatpak", "")
-    if flatpak and "/flatpak/exports/" in real:
-        user = real.startswith(os.path.join(DATA_HOME, "flatpak"))
+    # The flatpak's own app (not a web app another flatpak made for it):
+    # its entry lives in a flatpak exports folder.
+    if flatpak and ("/flatpak/" in path or "/flatpak/" in real) and not real.startswith(os.path.join(DATA_HOME, "xdg-desktop-portal")):
+        user = path.startswith(os.path.join(DATA_HOME, "flatpak")) or real.startswith(os.path.join(DATA_HOME, "flatpak"))
         data = os.path.join(HOME, ".var", "app", flatpak)
         details = ["Removes the app" + (" (installed just for you)." if user else " (installed for everyone on this PC).")]
         if os.path.isdir(data):
             details.append(f"Its settings and files in {nice(data)} are kept, so reinstalling brings them back.")
+        made = made_by(flatpak)
+        if made:
+            details.append(f"The {len(made)} app{'s' if len(made) != 1 else ''} it made will stop working: " + ", ".join(made[:5]) + ("…" if len(made) > 5 else "."))
         details.append("Shared runtimes that other Flatpak apps use are kept.")
         return ({"what": "a Flatpak app", "summary": f"{name} is a Flatpak app ({flatpak}).", "details": details},
                 [["flatpak", "uninstall", "-y", "--noninteractive", "--user" if user else "--system", flatpak]])
@@ -233,7 +251,7 @@ def main(argv):
             return 0
         print(json.dumps(dict(info, ok=True, keeps=bool(info.get("keeps")),
                               steps=[line for st in steps for line in show(st)],
-                              needsAuth=any(not isinstance(st, tuple) and st[0] == "pkexec" for st in steps))))
+                              needsAuth=any(not isinstance(st, tuple) and (st[0] == "pkexec" or "--system" in st) for st in steps))))
         return 0
     if not steps:
         print(json.dumps({"ok": False, "error": "Nothing to do"}))

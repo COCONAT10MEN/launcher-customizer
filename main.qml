@@ -356,6 +356,8 @@ Scope {
         kdeProc.running = true;
     }
 
+    property string lastKdeText: ""
+
     function kdeResult(text: string): void {
         const job = kdeProc.job;
         let res = null;
@@ -373,11 +375,17 @@ Scope {
                 if (res.staged && !res.stageDirty && !root.saving)
                     root.kdeRun(["discard"], null, false, true);
             }
-            if (!res.staged)
+            // An identical read changes nothing: skip it, so the launcher does
+            // not recompute everything (and rebuild its tiles) for no reason.
+            const same = !res.staged && text === root.lastKdeText;
+            if (!res.staged && !same) {
+                root.lastKdeText = text;
                 LauncherCustomizer.kde = res;
+            }
             root.kdeUpdated = Date.now();
             root.kdeError = "";
-            root.kdeChanged(res);
+            if (!same)
+                root.kdeChanged(res);
         } else if (!res.ok) {
             root.kdeError = res.error ?? "unknown error";
             console.warn("[launcher-customizer] " + root.kdeError);
@@ -599,9 +607,14 @@ Scope {
     }
 
     Connections {
+        // Opening the launcher only checks whether anything changed (cheap);
+        // the full read runs only then. File watchers catch the rest.
         function onLauncherOpenChanged(): void {
             if (Visibilities.launcherOpen)
-                root.refreshKde();
+                root.kdeRun(["stamp"], res => {
+                    if (res?.ok && res.stamp !== LauncherCustomizer.kde?.stamp)
+                        root.refreshKde();
+                }, true);
         }
 
         target: Visibilities

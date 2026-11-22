@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "29"
+VERSION = "30"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -303,6 +303,20 @@ OPS = [
         '        target: root.visibilities\n'
         '    }\n'
         '\n'
+        '    function lcSameSections(a: var, b: var): bool {\n'
+        '        if (a.length !== b.length)\n'
+        '            return false;\n'
+        '        for (let i = 0; i < a.length; i++) {\n'
+        '            const x = a[i], y = b[i];\n'
+        '            if (x.id !== y.id || x.name !== y.name || x.icon !== y.icon || x.iconSource !== y.iconSource || x.apps.length !== y.apps.length)\n'
+        '                return false;\n'
+        '            for (let j = 0; j < x.apps.length; j++)\n'
+        '                if (x.apps[j] !== y.apps[j])\n'
+        '                    return false;\n'
+        '        }\n'
+        '        return true;\n'
+        '    }\n'
+        '\n'
         '    // Keyboard selection inside the subcategory sections: { sec, idx } or null.\n'
         '    property var lcSecSel: null\n'
         '\n'
@@ -521,7 +535,9 @@ OPS = [
         '        // Launcher Customizer: sections for KDE subcategories, and the custom order.\n'
         '        const lcArr = LauncherCustomizer.arrange(root.currentCategory, Categories.appsFor(root.currentCategory, all), all, sortSettings.sortMode, l => root.sortedApps(l));\n'
         '        const nextApps = lcArr.top;\n'
-        '        root.lcSections = lcArr.sections;\n'
+        '        // Same sections as before: keep them (and their tiles) as they are.\n'
+        '        if (!root.lcSameSections(root.lcSections, lcArr.sections))\n'
+        '            root.lcSections = lcArr.sections;\n'
         '        if (root.lcSecSel && !root.lcSections[root.lcSecSel.sec])\n'
         '            root.lcSecSel = null;\n',
     ),
