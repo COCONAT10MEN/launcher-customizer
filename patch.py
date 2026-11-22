@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 TAG = "launcher-customizer"
-VERSION = "30"
+VERSION = "32"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANAGED = f"// {TAG}:managed"
 CREATED = {
@@ -228,6 +228,8 @@ OPS = [
         '    }\n'
         '\n'
         '    property string lcPrevCategory: root.currentCategory\n'
+        '    // The category refresh() last built (cleared by anything else that rebuilds).\n'
+        '    property string lcShown: ""\n'
         '    // True while the launcher is opening (no category slide then).\n'
         '    property bool lcIntro: LauncherCustomizer.pluginActive\n'
         '    // While the whole grid is replaced, its per-tile transitions stay off.\n'
@@ -374,11 +376,28 @@ OPS = [
         '    }\n'
         '\n'
         '    /// In the tab list, Up/Down show each category right away.\n'
+        '    // Arrowing through the list loads a category once you pause on it, so\n'
+        '    // passing through several does not build each one.\n'
         '    function lcPeekCategory(id: string): void {\n'
+        '        lcPeekTimer.target = id;\n'
+        '        lcPeekTimer.restart();\n'
+        '    }\n'
+        '\n'
+        '    Timer {\n'
+        '        id: lcPeekTimer\n'
+        '\n'
+        '        property string target: ""\n'
+        '\n'
+        '        interval: 120\n'
+        '        onTriggered: root.lcShowCategory(lcPeekTimer.target)\n'
+        '    }\n'
+        '\n'
+        '    function lcShowCategory(id: string): void {\n'
         '        if (!id || id === root.currentCategory)\n'
         '            return;\n'
         '        root.currentCategory = id;\n'
         '        root.refresh();\n'
+        '        root.lcShown = id;\n'
         '        root.lcSecSel = null;\n'
         '        Qt.callLater(() => grid.currentIndex = -1);\n'
         '    }\n'
@@ -535,6 +554,7 @@ OPS = [
         '        // Launcher Customizer: sections for KDE subcategories, and the custom order.\n'
         '        const lcArr = LauncherCustomizer.arrange(root.currentCategory, Categories.appsFor(root.currentCategory, all), all, sortSettings.sortMode, l => root.sortedApps(l));\n'
         '        const nextApps = lcArr.top;\n'
+        '        root.lcShown = root.currentCategory;\n'
         '        // Same sections as before: keep them (and their tiles) as they are.\n'
         '        if (!root.lcSameSections(root.lcSections, lcArr.sections))\n'
         '            root.lcSections = lcArr.sections;\n'
@@ -1291,7 +1311,12 @@ OPS = [
         '        root.refresh();\n'
         '        grid.currentIndex = grid.count > 0 ? 0 : -1;\n',
         '        sidebar.currentIndex = Math.max(0, idx);\n'
-        '        root.refresh();\n'
+        '        // Launcher Customizer: already showing it (Up/Down shows categories as\n'
+        '        // you go): no need to build it again.\n'
+        '        lcPeekTimer.stop();\n'
+        '        if (!(LauncherCustomizer.pluginActive && root.lcShown === id))\n'
+        '            root.refresh();\n'
+        '        root.lcShown = id;\n'
         '        grid.currentIndex = grid.count > 0 ? 0 : -1;\n'
         '        // Launcher Customizer: only sections here: start on the first one.\n'
         '        root.lcSecSel = null;\n'

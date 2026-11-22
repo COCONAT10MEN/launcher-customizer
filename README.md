@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.4.3-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.4.4-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -231,6 +231,11 @@ other edit it applies when you press *Save*:
 | Want to see what it is doing | Run `caelestia shell -l` and look for `[launcher-customizer]` lines |
 
 ## How it hooks in
+
+- **Costs nothing you can feel.** Measured against stock Caelestia with the same scripted
+  workload: idle CPU and launcher opening are the same as stock, and arrowing through
+  categories costs less than stock. It reads the menu only when something actually
+  changed, keeps tiles that did not change, and creates dialogs only when needed.
 
 - Caelestia's plugin API has no hooks for the launcher, so on every shell start
   `patch.py` adds `modules/launcher/services/LauncherCustomizer.qml` and replaces a few

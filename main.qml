@@ -197,16 +197,22 @@ Scope {
             Toaster.toast(qsTr("Launcher Customizer"), qsTr("Couldn't find the app's launcher file"), "warning");
             return;
         }
-        uninstallDlg.open(app, appId);
+        uninstallLoader.active = true;
+        uninstallLoader.item.open(app, appId);
     }
 
-    UninstallDialog {
-        id: uninstallDlg
+    // Created the first time it is needed, so it costs nothing until then.
+    LazyLoader {
+        id: uninstallLoader
 
-        pluginDir: root.pluginDir
-        onFinished: removed => {
-            if (removed)
-                syncDebounce.restart();
+        active: false
+
+        UninstallDialog {
+            pluginDir: root.pluginDir
+            onFinished: removed => {
+                if (removed)
+                    syncDebounce.restart();
+            }
         }
     }
 
@@ -360,6 +366,14 @@ Scope {
 
     function kdeResult(text: string): void {
         const job = kdeProc.job;
+        // A plain re-read that matches the last one: nothing to parse or update.
+        if (job?.args?.[0] === "dump" && !job.staging && text === root.lastKdeText) {
+            if (job?.done)
+                job.done({ ok: true });
+            root.kdeBusy = root.kdeQueue.length > 0;
+            root.kdeNext();
+            return;
+        }
         let res = null;
         try {
             res = JSON.parse(text);
@@ -628,7 +642,7 @@ Scope {
     }
 
     Timer {
-        interval: 3000
+        interval: 5000
         repeat: true
         running: root.shellReady && root.pageOpen && !root.dirty
         onTriggered: root.kdeRun(["stamp"], res => {
@@ -693,7 +707,8 @@ Scope {
         LauncherCustomizer.store = root;
         LauncherCustomizer.pluginActive = true;
         root.refreshKde();
-        root.refreshView();
+        // Unsaved edits from before a restart: the editor page loads them when
+        // it opens, so nothing to read now.
     }
 
     Component.onDestruction: {
