@@ -6,7 +6,7 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.5.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.5.1-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
@@ -100,13 +100,10 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
 **Requirements:** Caelestia KDE (tested on 2.7.5), `python3`. Optional: `python-fonttools`
 (Material icons in KDE) and `kdialog` (file pickers).
 
-**Easy install:** download the `…-UNZIP-then-double-click-Install.zip` file from the
-[latest release](https://github.com/COCONAT10MEN/launcher-customizer/releases/latest), unzip it, and
-double-click **Install Launcher Customizer** inside (choose *Execute* / *Run* if KDE asks). It copies the
-plugin into place and restarts Caelestia. Every older version is on the
-[Releases](https://github.com/COCONAT10MEN/launcher-customizer/releases) page with the same kind of zip.
+Grab the zip from the [latest release](https://github.com/COCONAT10MEN/launcher-customizer/releases/latest), unzip it and double-click
+**Install** inside. That's it. Older versions are on the [Releases](https://github.com/COCONAT10MEN/launcher-customizer/releases) page too.
 
-**Or** open *Settings*, go to *Plugins*, and install from this URL:
+Or paste this into Caelestia's *Settings → Plugins*:
 
 ```
 https://github.com/COCONAT10MEN/launcher-customizer
@@ -116,33 +113,19 @@ On first start the plugin hooks into the shell and restarts it once.
 
 ### Updating
 
-From version 3.5.0 on, the plugin tells you when a new version is out, and never updates on
-its own:
+It checks for new releases about once a day. When one's out you get a notification saying
+what's new and which Caelestia it was tested on: hit **Update**, or **Skip this one**. It never
+updates by itself, and right after an update there's an **Undo** in case something breaks.
 
-- About once a day it looks at this repository's
-  [Releases](https://github.com/COCONAT10MEN/launcher-customizer/releases). Only releases are offered, never
-  work-in-progress commits.
-- When there is one, a notification says what changed and which Caelestia version it was
-  tested on, with **Update**, **What's new** and **Skip this version**. Close it and it asks
-  again in three days.
-- If a release needs a newer Caelestia than yours, the notification says so and does not
-  offer it until you update Caelestia.
-- **Update** downloads that release, keeps your current version aside and restarts Caelestia.
-  A notification then offers **Undo update**, which puts the previous version back (that
-  release is then not offered again; newer ones are).
+On a version older than 3.5.0? Reinstall it once to get this. Your menu lives in KDE's own files, so it stays.
 
-Installed before 3.5.0? Install from the same URL once more to get this. Your menu lives in KDE's own files, so it is kept.
-
-Every version, with what changed and what it was tested on, is on the
-[Releases](https://github.com/COCONAT10MEN/launcher-customizer/releases) page.
-
-Turn update checks off (delete the file to turn them back on):
+Don't want the checks?
 
 ```bash
 mkdir -p ~/.local/state/caelestia/plugin-updates/launcher-customizer && touch ~/.local/state/caelestia/plugin-updates/launcher-customizer/off
 ```
 
-Undo the last update later:
+Want the previous version back later?
 
 ```bash
 bash ~/.config/caelestia/plugins/launcher-customizer/updater/update.sh rollback ~/.config/caelestia/plugins/launcher-customizer ~/.config/quickshell/caelestia
@@ -305,7 +288,7 @@ shell/                LauncherCustomizer.qml (singleton) and LauncherCustomizerP
 material-symbols.txt  icon names for the picker
 restart-shell.sh      restarts the shell through its systemd service
 assets/               README artwork
-updater/              opt-in updates: update.sh (checks, asks, updates, undoes), Updater.qml
+updater/              update checks (always asks first)
 metadata.json         plugin manifest
 ```
 

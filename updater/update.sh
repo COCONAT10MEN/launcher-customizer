@@ -70,13 +70,13 @@ revert_patches() {
 update_to() { # $1 = version
     local version=$1 tmp
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/$ID-update.XXXXXX") || return 1
-    say -t 4000 "Updating $NAME" "Downloading $version..."
+    say -t 4000 "Updating $NAME" "Grabbing $version..."
     if ! git clone -q --depth 1 --branch "v$version" "https://github.com/$SLUG.git" "$tmp/new" 2>"$tmp/err"; then
-        say "Could not update $NAME" "The download failed, so nothing was changed. $(tail -n1 "$tmp/err")"
+        say "Couldn't update $NAME" "The download failed, so nothing changed. $(tail -n1 "$tmp/err")"
         rm -rf "$tmp"; return 1
     fi
     if [ "$(jq -r .id "$tmp/new/metadata.json" 2>/dev/null)" != "$ID" ]; then
-        say "Could not update $NAME" "The download is not this plugin, so nothing was changed."
+        say "Couldn't update $NAME" "That download wasn't this plugin, so nothing changed."
         rm -rf "$tmp"; return 1
     fi
     # From here on the folder is being swapped: finish even if the shell stops.
@@ -84,24 +84,24 @@ update_to() { # $1 = version
     revert_patches "$DIR"
     rm -rf "$STATE/previous"
     if ! mv "$DIR" "$STATE/previous"; then
-        say "Could not update $NAME" "The plugin folder could not be moved, so nothing was changed."
+        say "Couldn't update $NAME" "Couldn't move the plugin folder, so nothing changed."
         rm -rf "$tmp"; return 1
     fi
     if ! mv "$tmp/new" "$DIR"; then
         mv "$STATE/previous" "$DIR"
-        say "Could not update $NAME" "The new version could not be put in place, so nothing was changed."
+        say "Couldn't update $NAME" "Couldn't put the new version in place, so nothing changed."
         rm -rf "$tmp"; return 1
     fi
     rm -rf "$tmp"
     printf '%s %s\n' "$CURRENT" "$version" >"$STATE/updated"
     rm -f "$STATE/skip" "$STATE/asked"
-    say -t 5000 "$NAME updated to $version" "Caelestia restarts now to load it."
+    say -t 5000 "$NAME $version is in" "Restarting Caelestia to load it."
     restart_shell
 }
 
 rollback() {
     if [ ! -f "$STATE/previous/metadata.json" ]; then
-        say "$NAME" "There is no earlier version to go back to."
+        say "$NAME" "There's no older version to go back to."
         return 1
     fi
     local back tmp
@@ -111,14 +111,14 @@ rollback() {
     revert_patches "$DIR"
     mv "$DIR" "$tmp/undone" && mv "$STATE/previous" "$DIR" || {
         [ -d "$DIR" ] || mv "$tmp/undone" "$DIR"
-        say "Could not go back" "$NAME was left as it was."
+        say "Couldn't go back" "$NAME is still on $CURRENT."
         rm -rf "$tmp"; return 1
     }
     rm -rf "$tmp"
     # The version just undone is not offered again; newer ones still are.
     printf '%s\n' "$CURRENT" >"$STATE/skip"
     rm -f "$STATE/updated"
-    say -t 6000 "$NAME is back to $back" "Caelestia restarts now. Version $CURRENT will not be offered again; newer ones will."
+    say -t 6000 "$NAME is back on $back" "Restarting Caelestia. You won't be asked about $CURRENT again."
     restart_shell
 }
 
@@ -128,8 +128,8 @@ just_updated() {
     rm -f "$STATE/updated"
     [ "$to" = "$CURRENT" ] && [ -d "$STATE/previous" ] || return 0
     while :; do
-        choice=$(ask -A notes="What's new" -A undo="Undo update" \
-            "$NAME updated to $to" "If something is not right, Undo update puts $from back.")
+        choice=$(ask -A notes="What's new" -A undo="Undo" \
+            "$NAME is now on $to" "Something broken? Undo puts $from back.")
         case "$choice" in
         notes) open_url "$(release_url "$to")" ;;
         undo) rollback; return ;;
@@ -176,20 +176,19 @@ check() {
     minimum=$(jq -r '.caelestiaMinimum // empty' <<<"$remote" 2>/dev/null)
     have=$(caelestia_version)
     if [ -n "$minimum" ] && [ -n "$have" ] && newer "$minimum" "$have"; then
-        compat="It needs Caelestia KDE $minimum or newer and you have $have, so update Caelestia first."
+        compat="It needs Caelestia $minimum or newer and you're on $have, so update Caelestia first."
         buttons=()
     elif [ -n "$tested" ] && [ -n "$have" ] && newer "$tested" "$have"; then
-        compat="Made and tested for Caelestia KDE $tested. You have $have, so it may not work until you update Caelestia."
+        compat="It's made for Caelestia $tested and you're on $have, so it might not work until you update."
     elif [ -n "$tested" ]; then
-        compat="Tested on Caelestia KDE $tested${have:+ (you have $have)}."
+        compat="Tested on Caelestia $tested."
     fi
 
     local body choice
-    body="You have $CURRENT. ${notes:+$notes }$compat
-Nothing changes unless you choose Update."
+    body="You're on $CURRENT. ${notes:+$notes }$compat"
     while :; do
-        choice=$(ask "${buttons[@]}" -A notes="What's new" -A skip="Skip this version" \
-            "$NAME $latest is available" "$body")
+        choice=$(ask "${buttons[@]}" -A notes="What's new" -A skip="Skip this one" \
+            "$NAME $latest is out" "$body")
         case "$choice" in
         update) update_to "$latest"; return ;;
         notes) open_url "${url:-$(release_url "$latest")}" ;;
