@@ -8,6 +8,7 @@ import qs.utils
 import qs.modules.launcher.services
 import qs.modules.nexus
 import "."
+import "updater"
 
 // Launcher Customizer: everything KDE's Menu Editor does, inside Caelestia,
 // synced both ways with the KDE application menu. The shell side lives in
@@ -842,5 +843,10 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: root.handle(text)
         }
+    }
+
+    // Opt-in updates: asks before changing anything (see updater/update.sh).
+    Updater {
+        pluginDir: root.pluginDir
     }
 }
