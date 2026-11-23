@@ -100,7 +100,13 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
 **Requirements:** Caelestia KDE (tested on 2.7.5), `python3`. Optional: `python-fonttools`
 (Material icons in KDE) and `kdialog` (file pickers).
 
-Open *Settings*, go to *Plugins*, and install from this URL:
+**Easy install:** download the `…-UNZIP-then-double-click-Install.zip` file from the
+[latest release](https://github.com/COCONAT10MEN/launcher-customizer/releases/latest), unzip it, and
+double-click **Install Launcher Customizer** inside (choose *Execute* / *Run* if KDE asks). It copies the
+plugin into place and restarts Caelestia. Every older version is on the
+[Releases](https://github.com/COCONAT10MEN/launcher-customizer/releases) page with the same kind of zip.
+
+**Or** open *Settings*, go to *Plugins*, and install from this URL:
 
 ```
 https://github.com/COCONAT10MEN/launcher-customizer
