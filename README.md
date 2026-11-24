@@ -4,15 +4,15 @@
 
 # launcher-customizer
 
-[![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.5_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
+[![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.6_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.5.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.6.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
 
 > [!NOTE]
-> **Tested and working on Caelestia KDE 2.7.5.** Other versions may work too: if an
+> **Tested and working on Caelestia KDE 2.7.6 (and 2.7.5).** Other versions may work too: if an
 > update changes the code this plugin hooks into, it switches itself off safely and a
 > notification tells you.
 
@@ -97,7 +97,7 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
 
 ## Installation
 
-**Requirements:** Caelestia KDE (tested on 2.7.5), `python3`. Optional: `python-fonttools`
+**Requirements:** Caelestia KDE (tested on 2.7.5 and 2.7.6), `python3`. Optional: `python-fonttools`
 (Material icons in KDE) and `kdialog` (file pickers).
 
 Grab the zip from the [latest release](https://github.com/COCONAT10MEN/launcher-customizer/releases/latest), unzip it and double-click

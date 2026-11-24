@@ -1345,13 +1345,28 @@ OPS = [
     ),
     (
         'modules/launcher/Content.qml',
-        '        visible: root.modernStyle\n'
-        '        anchors.left: parent.left\n'
-        '        // Line the greeting up with the category labels: the browser adds its\n',
-        '        // Launcher Customizer: the greeting can be hidden or reworded.\n'
-        '        visible: root.modernStyle && !(LauncherCustomizer.pluginActive && !LauncherCustomizer.showGreeting)\n'
-        '        anchors.left: parent.left\n'
-        '        // Line the greeting up with the category labels: the browser adds its\n',
+        [
+            # Caelestia 2.7.6+: the greeting also hides in the window switcher.
+            (
+                '        visible: root.modernStyle && !root.windowSwitcherMode\n'
+                '        anchors.left: parent.left\n'
+                '        // Line the greeting up with the category labels: the browser adds its\n',
+                '        // Launcher Customizer: the greeting can be hidden or reworded.\n'
+                '        visible: root.modernStyle && !root.windowSwitcherMode && !(LauncherCustomizer.pluginActive && !LauncherCustomizer.showGreeting)\n'
+                '        anchors.left: parent.left\n'
+                '        // Line the greeting up with the category labels: the browser adds its\n',
+            ),
+            # Caelestia 2.7.5
+            (
+                '        visible: root.modernStyle\n'
+                '        anchors.left: parent.left\n'
+                '        // Line the greeting up with the category labels: the browser adds its\n',
+                '        // Launcher Customizer: the greeting can be hidden or reworded.\n'
+                '        visible: root.modernStyle && !(LauncherCustomizer.pluginActive && !LauncherCustomizer.showGreeting)\n'
+                '        anchors.left: parent.left\n'
+                '        // Line the greeting up with the category labels: the browser adds its\n',
+            ),
+        ],
     ),
     (
         'modules/launcher/Content.qml',
@@ -1571,13 +1586,21 @@ def plan(shell: str):
 
 def patched(stock: dict) -> dict:
     out = dict(stock)
-    for rel, original, replacement in OPS:
+    for op in OPS:
+        # An op is (file, original, replacement), or (file, [(original, replacement), ...])
+        # when Caelestia versions differ: the first original found exactly once is used.
+        rel = op[0]
+        variants = op[1] if len(op) == 2 else [(op[1], op[2])]
         text = out[rel]
-        count = text.count(original)
-        if count != 1:
+        for original, replacement in variants:
+            if text.count(original) == 1:
+                out[rel] = text.replace(original, block(original, replacement), 1)
+                break
+        else:
+            original = variants[0][0]
+            count = text.count(original)
             first = original.strip().splitlines()[0].strip()
             raise ValueError(f"{rel}: snippet found {count} times: {first[:70]!r} (Caelestia changed; plugin needs updating)")
-        out[rel] = text.replace(original, block(original, replacement), 1)
     return out
 
 

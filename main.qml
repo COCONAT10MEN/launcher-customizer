@@ -831,7 +831,8 @@ Scope {
             console.info("[launcher-customizer] patch already in place");
         } else {
             console.warn("[launcher-customizer] " + result);
-            Toaster.toast(qsTr("Launcher Customizer"), qsTr("Could not hook into the launcher after an update, so it is back to stock: %1").arg(result), "warning");
+            Toaster.toast(qsTr("Launcher Customizer"), qsTr("Caelestia changed in its last update, so this is off for now. Checking for a fix..."), "warning");
+            updater.checkNow();
             if (result.startsWith("FAILED+RELOAD"))
                 root.restartShell();
         }
@@ -847,6 +848,8 @@ Scope {
 
     // Opt-in updates: asks before changing anything (see updater/update.sh).
     Updater {
+        id: updater
+
         pluginDir: root.pluginDir
     }
 }

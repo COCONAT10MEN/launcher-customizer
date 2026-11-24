@@ -11,16 +11,25 @@ Scope {
     id: updater
 
     required property string pluginDir
+    property bool now: false
 
     function check(): void {
         if (!proc.running)
             proc.running = true;
     }
 
+    // Right away, ignoring the once-a-day limit: used when a Caelestia update
+    // broke the plugin's patch, so a fixed version shows up as soon as it exists.
+    function checkNow(): void {
+        updater.now = true;
+        check();
+    }
+
     Process {
         id: proc
 
-        command: ["bash", updater.pluginDir + "/updater/update.sh", "check", updater.pluginDir, Quickshell.shellDir]
+        command: ["bash", updater.pluginDir + "/updater/update.sh", "check", updater.pluginDir, Quickshell.shellDir, updater.now ? "now" : ""]
+        onExited: updater.now = false
     }
 
     Timer {
