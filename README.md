@@ -6,15 +6,16 @@
 
 [![Caelestia KDE](https://img.shields.io/badge/Caelestia_KDE-2.7.6_tested-9bd0cc?style=for-the-badge&labelColor=101418)](https://github.com/caelestia-kde/caelestia)
 [![KDE Plasma](https://img.shields.io/badge/Plasma_6-1D99F3?logo=kde&logoColor=white&style=for-the-badge&labelColor=101418)](https://kde.org/plasma-desktop)
-[![Version](https://img.shields.io/badge/Version-3.6.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
+[![Version](https://img.shields.io/badge/Version-3.7.0-9bd0cc?style=for-the-badge&labelColor=101418)](metadata.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9bd0cc?style=for-the-badge&labelColor=101418)](LICENSE)
 
 </div>
 
 > [!NOTE]
-> **Tested and working on Caelestia KDE 2.7.6 (and 2.7.5).** Other versions may work too: if an
-> update changes the code this plugin hooks into, it switches itself off safely and a
-> notification tells you.
+> **Tested and working on Caelestia KDE 2.7.6 (and 2.7.5).** Other versions usually work too. When a
+> Caelestia update moves things around a little, the plugin adapts on its own. If it can't
+> do that safely, it switches itself off, Caelestia keeps working as stock, and it looks for a
+> fixed version right away.
 
 **Make Caelestia's app launcher yours.** Out of the box, the launcher sorts your apps
 into a fixed set of categories that you can't rename, reorder or add to. Launcher
@@ -113,9 +114,14 @@ On first start the plugin hooks into the shell and restarts it once.
 
 ### Updating
 
-It checks for new releases about once a day. When one's out you get a notification saying
-what's new and which Caelestia it was tested on: hit **Update**, or **Skip this one**. It never
-updates by itself, and right after an update there's an **Undo** in case something breaks.
+It checks for new releases about once a day, and right away after Caelestia updates. When
+one's out you get a notification saying what's new and which Caelestia it was made for next
+to yours: hit **Update**, or **Skip this one**. There's also an update badge on its row in
+*Settings → Plugins*, so you can update from there whenever you like. It never updates by
+itself, and right after an update there's an **Undo** in case something breaks.
+
+It only offers versions that work with your Caelestia. If the newest one needs a newer
+Caelestia, you get the newest one that fits, or a heads-up to update Caelestia first.
 
 On a version older than 3.5.0? Reinstall it once to get this. Your menu lives in KDE's own files, so it stays.
 
@@ -288,7 +294,8 @@ shell/                LauncherCustomizer.qml (singleton) and LauncherCustomizerP
 material-symbols.txt  icon names for the picker
 restart-shell.sh      restarts the shell through its systemd service
 assets/               README artwork
-updater/              update checks (always asks first)
+updater/              update checks (always asks first) and the Update badge in Settings → Plugins
+heal.py               adapts the patch to small Caelestia changes, and undoes it if anything breaks
 metadata.json         plugin manifest
 ```
 

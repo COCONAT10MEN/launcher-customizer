@@ -3,7 +3,7 @@
   "name": "Launcher Customizer",
   "description": "Make the app launcher yours, right inside Settings: your own categories and subcategories (stacked or flowing, with background colours), pin apps to the top, sort by install date, edit apps and shortcuts, save when you're ready, backup and share. Shared with KDE's menu.",
   "icon": "icon.svg",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "repository": "https://github.com/COCONAT10MEN/launcher-customizer",
   "caelestiaTested": "2.7.6",
   "type": "quickshell",

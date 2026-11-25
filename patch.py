@@ -18,6 +18,7 @@ Usage:
     patch.py apply  <shell dir>  -> OK | PATCHED | FAILED[+RELOAD]: <reason>
     patch.py revert <shell dir>  -> REVERTED | NOTHING
     patch.py status <shell dir>  -> APPLIED | PARTIAL | MISSING
+    patch.py watchdog <shell dir> -> OK | REVERTED | NOTHING  (run by systemd after an adapted patch)
 """
 
 import base64
@@ -29,6 +30,14 @@ import tempfile
 TAG = "launcher-customizer"
 VERSION = "32"
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import heal  # noqa: E402  (self-repair when Caelestia changes a little)
+
+try:
+    import json as _json
+    NAME = _json.load(open(os.path.join(HERE, "metadata.json"))).get("name") or TAG
+except (OSError, ValueError):
+    NAME = TAG
 MANAGED = f"// {TAG}:managed"
 CREATED = {
     "modules/launcher/services/LauncherCustomizer.qml": os.path.join(HERE, "shell", "LauncherCustomizer.qml"),
@@ -1584,24 +1593,9 @@ def plan(shell: str):
     return current, stock
 
 
-def patched(stock: dict) -> dict:
-    out = dict(stock)
-    for op in OPS:
-        # An op is (file, original, replacement), or (file, [(original, replacement), ...])
-        # when Caelestia versions differ: the first original found exactly once is used.
-        rel = op[0]
-        variants = op[1] if len(op) == 2 else [(op[1], op[2])]
-        text = out[rel]
-        for original, replacement in variants:
-            if text.count(original) == 1:
-                out[rel] = text.replace(original, block(original, replacement), 1)
-                break
-        else:
-            original = variants[0][0]
-            count = text.count(original)
-            first = original.strip().splitlines()[0].strip()
-            raise ValueError(f"{rel}: snippet found {count} times: {first[:70]!r} (Caelestia changed; plugin needs updating)")
-    return out
+def patched(stock: dict):
+    """(patched texts, files that needed adapting to this Caelestia)."""
+    return heal.patch_ops(OPS, stock, block, TAG)
 
 
 def created_state(shell: str):
@@ -1626,16 +1620,29 @@ def remove_created(shell: str) -> bool:
 
 
 def main() -> int:
-    if len(sys.argv) != 3 or sys.argv[1] not in ("apply", "revert", "status"):
+    if len(sys.argv) != 3 or sys.argv[1] not in ("apply", "revert", "status", "watchdog"):
         print(__doc__.strip())
         return 2
     action, shell = sys.argv[1], sys.argv[2]
+    heal.hold_shell_lock()  # other plugins patch at the same moment
 
     try:
         current, stock = plan(shell)
     except FileNotFoundError as e:
         print(f"FAILED: shell file missing: {e}")
         return 1
+
+    def write_stock():
+        cur, stk = plan(shell)
+        for rel, text in stk.items():
+            if text != cur[rel]:
+                write_atomic(os.path.join(shell, rel), text)
+        remove_created(shell)
+
+    guard = heal.Guard(TAG, os.path.abspath(__file__), shell, NAME)
+    if action == "watchdog":
+        print(guard.watchdog(write_stock))
+        return 0
 
     if action == "status":
         n = sum(len(BLOCK_RE.findall(t)) for t in current.values())
@@ -1655,7 +1662,9 @@ def main() -> int:
 
     # apply
     try:
-        want = patched(stock)
+        want, healed = patched(stock)
+        if guard.refused(stock, healed):
+            raise ValueError("adapting to this Caelestia failed before, so it stays off until a plugin update")
     except ValueError as e:
         # All-or-nothing: put everything back to stock so the shell stays sane.
         changed = False
@@ -1677,11 +1686,20 @@ def main() -> int:
         if cur != wanted:
             write_atomic(dest, wanted)
             changed = True
-    for rel, text in want.items():
-        if text != current[rel]:
-            write_atomic(os.path.join(shell, rel), text)
-            changed = True
-    print("PATCHED" if changed else "OK")
+    touched = [rel for rel, text in want.items() if text != current[rel]]
+    for rel in touched:
+        write_atomic(os.path.join(shell, rel), want[rel])
+        changed = True
+    if changed:
+        # Watch every file just patched: if Caelestia doesn't come back right, undo.
+        guard.record(stock, touched or healed)
+        print("PATCHED")
+        return 0
+    failed = guard.check(write_stock)
+    if failed:
+        print(failed)
+        return 1
+    print("OK")
     return 0
 
 
