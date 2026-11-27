@@ -27,6 +27,19 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
 
 ![Switching between custom categories in the launcher](assets/media/launcher.gif)
 
+<table>
+<tr>
+<td width="33%"><img src="assets/media/launcher.png" alt="The launcher showing a custom Development category"></td>
+<td width="33%"><img src="assets/media/launcher-editor.png" alt="The Launcher Customizer editor in Settings"></td>
+<td width="33%"><img src="assets/media/launcher-app-editing.png" alt="Editing an app's name, command, arguments and launch options"></td>
+</tr>
+<tr>
+<td>Your own categories in the launcher. The dot marks an app that's new or just updated, the heart one that's pinned.</td>
+<td>The editor, in <i>Settings → Panels &amp; Interface → Launcher</i>.</td>
+<td>Editing an app: name, command, arguments and how it launches.</td>
+</tr>
+</table>
+
 ## What it offers
 
 - **Categories that fit how you work.** Create, rename, nest into subcategories,
@@ -97,21 +110,6 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
 > [!TIP]
 > Right-click any app in the launcher and choose *App info* to jump straight to
 > it in the editor.
-
-## Screenshots
-
-The launcher with your own categories. The dot marks an app that's new or just updated, the
-heart marks one pinned to the top.
-
-![The launcher showing a custom Development category](assets/media/launcher.png)
-
-The editor, in *Settings → Panels & Interface → Launcher*:
-
-![The Launcher Customizer editor in Settings](assets/media/launcher-editor.png)
-
-Editing an app's details:
-
-![Editing an app's name, command, arguments and launch options](assets/media/launcher-app-editing.png)
 
 ## Installation
 
