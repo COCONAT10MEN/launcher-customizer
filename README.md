@@ -25,6 +25,8 @@ where you want them, custom launchers for your own commands and scripts, global
 shortcuts, and the app details themselves. It lives right inside Settings, under
 *Panels & Interface -> Launcher*, styled like the rest of Caelestia.
 
+![Switching between custom categories in the launcher](assets/media/launcher.gif)
+
 ## What it offers
 
 - **Categories that fit how you work.** Create, rename, nest into subcategories,
@@ -95,6 +97,21 @@ shortcuts, and the app details themselves. It lives right inside Settings, under
 > [!TIP]
 > Right-click any app in the launcher and choose *App info* to jump straight to
 > it in the editor.
+
+## Screenshots
+
+The launcher with your own categories. The dot marks an app that's new or just updated, the
+heart marks one pinned to the top.
+
+![The launcher showing a custom Development category](assets/media/launcher.png)
+
+The editor, in *Settings → Panels & Interface → Launcher*:
+
+![The Launcher Customizer editor in Settings](assets/media/launcher-editor.png)
+
+Editing an app's details:
+
+![Editing an app's name, command, arguments and launch options](assets/media/launcher-app-editing.png)
 
 ## Installation
 
